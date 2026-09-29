@@ -193,7 +193,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
                     dialog = null
                 }) { Text("Создать") }
             },
-            dismissButton = { TextButton(onClick = { dialog = "" .let { null } }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Отмена") } }
         )
     }
 }
