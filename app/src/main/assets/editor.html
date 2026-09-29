@@ -4,23 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  html, body { height: 100%; margin: 0; }
-  body { display: flex; flex-direction: column; font-family: sans-serif; font-size: 17px; }
-  #topbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; flex: none; border-bottom: 1px solid #ddd; }
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { font-family: sans-serif; font-size: 17px; }
+  #topbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #ddd; }
   #topbar button { height: 36px; min-width: 44px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 18px; padding: 0 10px; }
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
-  #bar { display: none; flex-wrap: wrap; gap: 4px; padding: 6px; background: #f4f4f4; border-bottom: 1px solid #ccc; flex: none; }
+  #dbg { font-size: 12px; color: #888; }
+  #bar { display: none; flex-wrap: wrap; gap: 4px; padding: 6px; background: #f4f4f4; border-bottom: 1px solid #ccc; }
   #bar.open { display: flex; }
   #bar button { min-width: 36px; height: 36px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 15px; padding: 0 6px; }
   #bar button.sw { min-width: 30px; width: 30px; height: 30px; margin-top: 3px; border: 1px solid #777; border-radius: 50%; padding: 0; }
   #bar button.hl { border-radius: 4px; }
-  #ed { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; outline: none; }
+  #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
 </style>
 </head>
 <body>
 <div id="topbar">
   <button data-c="menu">☰</button>
+  <span id="dbg"></span>
   <button id="fmt" data-c="toggle">Аа</button>
 </div>
 <div id="bar">
@@ -52,7 +54,15 @@
   var bar = document.getElementById('bar');
   var topbar = document.getElementById('topbar');
   var fmt = document.getElementById('fmt');
+  var dbg = document.getElementById('dbg');
   var timer = null;
+
+  function fit() {
+    var used = topbar.offsetHeight + (bar.classList.contains('open') ? bar.offsetHeight : 0);
+    var h = window.innerHeight - used;
+    ed.style.height = Math.max(h, 150) + 'px';
+    dbg.textContent = window.innerHeight + '/' + ed.clientHeight;
+  }
 
   function fullDoc() {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' + ed.innerHTML + '</body></html>';
@@ -65,6 +75,12 @@
   if (saved) {
     ed.innerHTML = new DOMParser().parseFromString(saved, 'text/html').body.innerHTML;
   }
+
+  fit();
+  window.addEventListener('resize', fit);
+  window.addEventListener('load', fit);
+  setTimeout(fit, 300);
+  ed.addEventListener('focus', function () { setTimeout(fit, 400); });
 
   ed.addEventListener('input', later);
   ed.addEventListener('click', function (e) {
@@ -85,6 +101,7 @@
     if (b.dataset.c === 'toggle') {
       var open = bar.classList.toggle('open');
       fmt.classList.toggle('on', open);
+      fit();
     }
   });
 
