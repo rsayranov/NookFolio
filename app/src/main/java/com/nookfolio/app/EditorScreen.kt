@@ -1,18 +1,17 @@
 package com.nookfolio.app
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
 
-class EditorBridge(private val file: File) {
+class EditorBridge(private val file: File, private val onMenu: () -> Unit) {
     @JavascriptInterface
     fun load(): String = if (file.exists()) file.readText() else ""
 
@@ -20,32 +19,25 @@ class EditorBridge(private val file: File) {
     fun save(html: String) {
         file.writeText(html)
     }
+
+    @JavascriptInterface
+    fun openMenu() {
+        Handler(Looper.getMainLooper()).post { onMenu() }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun EditorScreen(file: File, onClose: () -> Unit) {
-    var web by remember { mutableStateOf<WebView?>(null) }
-
-    val close: () -> Unit = {
-        val w = web
-        if (w != null) w.evaluateJavascript("flush()") { onClose() } else onClose()
-    }
-    BackHandler { close() }
-
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = close) { Text("← Назад") }
-            Text(file.nameWithoutExtension, style = MaterialTheme.typography.titleMedium)
-        }
+fun EditorScreen(file: File, onMenu: () -> Unit, onWeb: (WebView) -> Unit) {
+    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         AndroidView(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = true
-                    addJavascriptInterface(EditorBridge(file), "Android")
+                    addJavascriptInterface(EditorBridge(file, onMenu), "Android")
                     loadUrl("file:///android_asset/editor.html")
-                    web = this
+                    onWeb(this)
                 }
             }
         )
