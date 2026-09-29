@@ -6,15 +6,23 @@
 <style>
   html, body { height: 100%; margin: 0; }
   body { display: flex; flex-direction: column; font-family: sans-serif; font-size: 17px; }
-  #bar { display: flex; gap: 6px; overflow-x: auto; padding: 6px; background: #f4f4f4; border-bottom: 1px solid #ccc; flex: none; }
-  #bar button { flex: none; min-width: 40px; height: 40px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 16px; }
-  #bar button.sw { min-width: 28px; width: 28px; height: 28px; margin-top: 6px; border: 1px solid #777; border-radius: 50%; }
+  #topbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; flex: none; border-bottom: 1px solid #ddd; }
+  #topbar button { height: 36px; min-width: 44px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 18px; padding: 0 10px; }
+  #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
+  #bar { display: none; flex-wrap: wrap; gap: 4px; padding: 6px; background: #f4f4f4; border-bottom: 1px solid #ccc; flex: none; }
+  #bar.open { display: flex; }
+  #bar button { min-width: 36px; height: 36px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 15px; padding: 0 6px; }
+  #bar button.sw { min-width: 30px; width: 30px; height: 30px; margin-top: 3px; border: 1px solid #777; border-radius: 50%; padding: 0; }
   #bar button.hl { border-radius: 4px; }
-  #ed { flex: 1; overflow-y: auto; padding: 12px; outline: none; }
+  #ed { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; outline: none; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
 </style>
 </head>
 <body>
+<div id="topbar">
+  <button data-c="menu">☰</button>
+  <button id="fmt" data-c="toggle">Аа</button>
+</div>
 <div id="bar">
   <button data-c="bold"><b>B</b></button>
   <button data-c="italic"><i>I</i></button>
@@ -22,12 +30,12 @@
   <button data-c="strikeThrough"><s>S</s></button>
   <button data-c="formatBlock" data-v="H1">H1</button>
   <button data-c="formatBlock" data-v="H2">H2</button>
-  <button data-c="formatBlock" data-v="P">Aa</button>
+  <button data-c="formatBlock" data-v="P">¶</button>
   <button data-c="insertUnorderedList">•</button>
   <button data-c="insertOrderedList">1.</button>
   <button data-c="check">☑</button>
   <button data-c="indent">→</button>
-  <button data-c="outdent">←</button>
+  <button data-c="outdent">⇤</button>
   <button class="sw" data-c="foreColor" data-v="#000000" style="background:#000000"></button>
   <button class="sw" data-c="foreColor" data-v="#d32f2f" style="background:#d32f2f"></button>
   <button class="sw" data-c="foreColor" data-v="#1976d2" style="background:#1976d2"></button>
@@ -42,6 +50,8 @@
 <script>
   var ed = document.getElementById('ed');
   var bar = document.getElementById('bar');
+  var topbar = document.getElementById('topbar');
+  var fmt = document.getElementById('fmt');
   var timer = null;
 
   function fullDoc() {
@@ -64,7 +74,20 @@
       later();
     }
   });
+
   bar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  topbar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+  topbar.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-c]');
+    if (!b) return;
+    if (b.dataset.c === 'menu') { flush(); ed.blur(); Android.openMenu(); return; }
+    if (b.dataset.c === 'toggle') {
+      var open = bar.classList.toggle('open');
+      fmt.classList.toggle('on', open);
+    }
+  });
+
   bar.addEventListener('click', function (e) {
     var b = e.target.closest('[data-c]');
     if (!b) return;
