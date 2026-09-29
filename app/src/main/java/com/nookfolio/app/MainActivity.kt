@@ -50,6 +50,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
     var opened by remember {
         mutableStateOf(prefs.getString("last", null)?.let { File(it) }?.takeIf { it.exists() })
     }
+    var session by remember { mutableIntStateOf(0) }
     var target by remember { mutableStateOf(opened?.parentFile ?: store.root) }
     val expanded = remember { mutableStateListOf<String>() }
     var dialog by remember { mutableStateOf<String?>(null) }
@@ -60,6 +61,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
     fun openNote(f: File) {
         val show: () -> Unit = {
             opened = f
+            session++
             target = f.parentFile ?: store.root
             prefs.edit().putString("last", f.path).apply()
             scope.launch { drawer.close() }
@@ -140,10 +142,15 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
     ) {
         val note = opened
         if (note != null) {
-            key(note.path) {
+            key(session) {
                 EditorScreen(
                     file = note,
                     onMenu = { scope.launch { drawer.open() } },
+                    onRenamed = { f ->
+                        opened = f
+                        prefs.edit().putString("last", f.path).apply()
+                        version++
+                    },
                     onWeb = { web = it; onWebChange(it) }
                 )
             }
@@ -186,7 +193,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
                     dialog = null
                 }) { Text("Создать") }
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { dialog = "" .let { null } }) { Text("Отмена") } }
         )
     }
 }
