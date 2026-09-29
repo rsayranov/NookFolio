@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,12 +31,19 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BrowserScreen(store: NoteStore) {
     var current by remember { mutableStateOf(store.root) }
+    var opened by remember { mutableStateOf<File?>(null) }
     var version by remember { mutableIntStateOf(0) }
     var dialog by remember { mutableStateOf<String?>(null) }
     val atRoot = current == store.root
     val entries = remember(current, version) { store.list(current) }
 
-    BackHandler(enabled = !atRoot) { current = current.parentFile!! }
+    BackHandler(enabled = !atRoot && opened == null) { current = current.parentFile!! }
+
+    val note = opened
+    if (note != null) {
+        EditorScreen(note) { opened = null }
+        return
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         Text(
@@ -59,7 +67,9 @@ fun BrowserScreen(store: NoteStore) {
                     (if (item.isFolder) "📁 " else "📝 ") + item.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { if (item.isFolder) current = item.file }
+                        .clickable {
+                            if (item.isFolder) current = item.file else opened = item.file
+                        }
                         .padding(16.dp)
                 )
                 HorizontalDivider()
