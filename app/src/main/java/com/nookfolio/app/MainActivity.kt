@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
@@ -130,6 +132,9 @@ fun InlineNameField(
 fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?) -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val noRipple = remember { MutableInteractionSource() }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -173,6 +178,20 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
     fun refresh() {
         version++
         trash = store.listTrash()
+    }
+
+    fun finishEdit() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        if (edit != null) edit = null
+    }
+
+    fun guard(action: () -> Unit) {
+        if (edit != null) {
+            finishEdit()
+        } else {
+            action()
+        }
     }
 
     fun withFlush(action: () -> Unit) {
@@ -300,7 +319,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
     }
 
     LaunchedEffect(drawer.currentValue) {
-        if (drawer.currentValue == DrawerValue.Closed) edit = null
+        if (drawer.currentValue == DrawerValue.Closed && edit != null) finishEdit()
     }
 
     LaunchedEffect(edit) {
@@ -331,21 +350,31 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
                                     MaterialTheme.colorScheme.secondaryContainer
                                 else Color.Transparent
                             )
-                            .clickable { target = store.root }
+                            .clickable { guard { target = store.root } }
                             .padding(16.dp)
                     )
                     Row(
                         Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(onClick = { startCreate("folder") }) { Text("Папка") }
-                        Button(onClick = { startCreate("note") }) { Text("Заметка") }
+                        Button(onClick = { guard { startCreate("folder") } }) { Text("Папка") }
+                        Button(onClick = { guard { startCreate("note") } }) { Text("Заметка") }
                     }
                     HorizontalDivider()
                     if (display.isEmpty()) {
                         Text("Пока пусто", Modifier.padding(16.dp))
                     }
-                    LazyColumn(Modifier.weight(1f), state = listState) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = noRipple,
+                                indication = null,
+                                onClick = { guard { target = store.root } }
+                            ),
+                        state = listState
+                    ) {
                         items(display, key = { it.key }) { row ->
                             val item = row.item
                             val e = edit
@@ -392,19 +421,23 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
                                             )
                                             .combinedClickable(
                                                 onClick = {
-                                                    if (item.isFolder) {
-                                                        target = item.file
-                                                        if (isExpanded) expanded.remove(item.file.path)
-                                                        else expanded.add(item.file.path)
-                                                    } else {
-                                                        openNote(item.file)
+                                                    guard {
+                                                        if (item.isFolder) {
+                                                            target = item.file
+                                                            if (isExpanded) expanded.remove(item.file.path)
+                                                            else expanded.add(item.file.path)
+                                                        } else {
+                                                            openNote(item.file)
+                                                        }
                                                     }
                                                 },
                                                 onLongClick = {
-                                                    haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress
-                                                    )
-                                                    actionItem = item.file
+                                                    guard {
+                                                        haptic.performHapticFeedback(
+                                                            HapticFeedbackType.LongPress
+                                                        )
+                                                        actionItem = item.file
+                                                    }
                                                 }
                                             )
                                             .padding(
@@ -421,8 +454,10 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
                     HorizontalDivider()
                     TextButton(
                         onClick = {
-                            trash = store.listTrash()
-                            showTrash = true
+                            guard {
+                                trash = store.listTrash()
+                                showTrash = true
+                            }
                         },
                         modifier = Modifier.padding(8.dp)
                     ) { Text(trashLabel) }
