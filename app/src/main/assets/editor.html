@@ -9,14 +9,20 @@
   #topbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #ddd; }
   #topbar button { height: 36px; min-width: 44px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 18px; padding: 0 10px; }
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
-  #bar { display: none; flex-wrap: wrap; gap: 4px; padding: 6px; background: #f4f4f4; border-bottom: 1px solid #ccc; }
-  #bar.open { display: flex; }
-  #bar button { min-width: 36px; height: 36px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 15px; padding: 0 6px; }
-  #bar button.sw { min-width: 30px; width: 30px; height: 30px; margin-top: 3px; border: 1px solid #777; border-radius: 50%; padding: 0; }
-  #bar button.hl { border-radius: 4px; }
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
+
+  #bar { display: none; position: fixed; right: 8px; top: 48px; width: 240px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 4px 0; }
+  #bar.open { display: block; }
+  #bar .item { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 12px 14px; font-size: 16px; font-family: sans-serif; color: #000; }
+  #bar .item:active { background: #e6e6e6; }
+  #bar .ic { display: inline-block; width: 30px; text-align: center; margin-right: 8px; }
+  #bar .sep { height: 1px; background: #ddd; margin: 4px 0; }
+  #bar .lbl { font-size: 13px; color: #777; padding: 8px 14px 2px 14px; }
+  #bar .row { display: flex; gap: 12px; padding: 6px 14px 10px 14px; }
+  #bar .sw { width: 32px; height: 32px; border: 1px solid #777; border-radius: 50%; padding: 0; font-size: 14px; color: #000; }
+  #bar .sw.hl { border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -25,27 +31,37 @@
   <button id="fmt" data-c="toggle">Аа</button>
 </div>
 <div id="bar">
-  <button data-c="bold"><b>B</b></button>
-  <button data-c="italic"><i>I</i></button>
-  <button data-c="underline"><u>U</u></button>
-  <button data-c="strikeThrough"><s>S</s></button>
-  <button data-c="formatBlock" data-v="H1">H1</button>
-  <button data-c="formatBlock" data-v="H2">H2</button>
-  <button data-c="formatBlock" data-v="P">¶</button>
-  <button data-c="insertUnorderedList">•</button>
-  <button data-c="insertOrderedList">1.</button>
-  <button data-c="check">☑</button>
-  <button data-c="indent">→</button>
-  <button data-c="outdent">⇤</button>
-  <button class="sw" data-c="foreColor" data-v="#000000" style="background:#000000"></button>
-  <button class="sw" data-c="foreColor" data-v="#d32f2f" style="background:#d32f2f"></button>
-  <button class="sw" data-c="foreColor" data-v="#1976d2" style="background:#1976d2"></button>
-  <button class="sw" data-c="foreColor" data-v="#388e3c" style="background:#388e3c"></button>
-  <button class="sw" data-c="foreColor" data-v="#f57c00" style="background:#f57c00"></button>
-  <button class="sw hl" data-c="hiliteColor" data-v="#fff176" style="background:#fff176"></button>
-  <button class="sw hl" data-c="hiliteColor" data-v="#a5d6a7" style="background:#a5d6a7"></button>
-  <button class="sw hl" data-c="hiliteColor" data-v="#f8bbd0" style="background:#f8bbd0"></button>
-  <button class="sw hl" data-c="hiliteColor" data-v="transparent" style="background:#ffffff">✕</button>
+  <button class="item" data-c="bold"><span class="ic"><b>B</b></span>Жирный</button>
+  <button class="item" data-c="italic"><span class="ic"><i>I</i></span>Курсив</button>
+  <button class="item" data-c="underline"><span class="ic"><u>U</u></span>Подчёркнутый</button>
+  <button class="item" data-c="strikeThrough"><span class="ic"><s>S</s></span>Зачёркнутый</button>
+  <div class="sep"></div>
+  <button class="item" data-c="formatBlock" data-v="H1"><span class="ic">H1</span>Заголовок 1</button>
+  <button class="item" data-c="formatBlock" data-v="H2"><span class="ic">H2</span>Заголовок 2</button>
+  <button class="item" data-c="formatBlock" data-v="P"><span class="ic">¶</span>Обычный текст</button>
+  <div class="sep"></div>
+  <button class="item" data-c="insertUnorderedList"><span class="ic">•</span>Маркированный список</button>
+  <button class="item" data-c="insertOrderedList"><span class="ic">1.</span>Нумерованный список</button>
+  <button class="item" data-c="check"><span class="ic">☑</span>Чек-лист</button>
+  <div class="sep"></div>
+  <button class="item" data-c="indent"><span class="ic">→</span>Отступ больше</button>
+  <button class="item" data-c="outdent"><span class="ic">⇤</span>Отступ меньше</button>
+  <div class="sep"></div>
+  <div class="lbl">Цвет текста</div>
+  <div class="row">
+    <button class="sw" data-c="foreColor" data-v="#000000" style="background:#000000"></button>
+    <button class="sw" data-c="foreColor" data-v="#d32f2f" style="background:#d32f2f"></button>
+    <button class="sw" data-c="foreColor" data-v="#1976d2" style="background:#1976d2"></button>
+    <button class="sw" data-c="foreColor" data-v="#388e3c" style="background:#388e3c"></button>
+    <button class="sw" data-c="foreColor" data-v="#f57c00" style="background:#f57c00"></button>
+  </div>
+  <div class="lbl">Маркер</div>
+  <div class="row">
+    <button class="sw hl" data-c="hiliteColor" data-v="#fff176" style="background:#fff176"></button>
+    <button class="sw hl" data-c="hiliteColor" data-v="#a5d6a7" style="background:#a5d6a7"></button>
+    <button class="sw hl" data-c="hiliteColor" data-v="#f8bbd0" style="background:#f8bbd0"></button>
+    <button class="sw hl" data-c="hiliteColor" data-v="transparent" style="background:#ffffff">✕</button>
+  </div>
 </div>
 <input id="title" type="text" placeholder="Заголовок" autocomplete="off">
 <div id="ed" contenteditable="true"></div>
@@ -60,9 +76,15 @@
   title.value = current;
 
   function fit() {
-    var used = topbar.offsetHeight + title.offsetHeight + (bar.classList.contains('open') ? bar.offsetHeight : 0);
-    var h = window.innerHeight - used;
+    var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
     ed.style.height = Math.max(h, 150) + 'px';
+    bar.style.top = (topbar.offsetHeight + 2) + 'px';
+    bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
+  }
+
+  function closeMenu() {
+    bar.classList.remove('open');
+    fmt.classList.remove('on');
   }
 
   function commitTitle() {
@@ -91,10 +113,12 @@
   ed.addEventListener('focus', function () { setTimeout(fit, 400); });
 
   title.addEventListener('blur', commitTitle);
+  title.addEventListener('focus', closeMenu);
   title.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); commitTitle(); ed.focus(); }
   });
 
+  ed.addEventListener('pointerdown', closeMenu);
   ed.addEventListener('input', later);
   ed.addEventListener('click', function (e) {
     if (e.target.type === 'checkbox') {
@@ -110,7 +134,7 @@
   topbar.addEventListener('click', function (e) {
     var b = e.target.closest('[data-c]');
     if (!b) return;
-    if (b.dataset.c === 'menu') { flush(); ed.blur(); title.blur(); Android.openMenu(); return; }
+    if (b.dataset.c === 'menu') { flush(); closeMenu(); ed.blur(); title.blur(); Android.openMenu(); return; }
     if (b.dataset.c === 'toggle') {
       var open = bar.classList.toggle('open');
       fmt.classList.toggle('on', open);
