@@ -152,6 +152,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
     var actionItem by remember { mutableStateOf<File?>(null) }
     var moveItem by remember { mutableStateOf<File?>(null) }
     var showTrash by remember { mutableStateOf(false) }
+    var plusMenu by remember { mutableStateOf(false) }
 
     val expandedSet = expanded.toSet()
     val rows = remember(version, expandedSet) { store.flatten(expandedSet) }
@@ -353,13 +354,6 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
                             .clickable { guard { target = store.root } }
                             .padding(16.dp)
                     )
-                    Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = { guard { startCreate("folder") } }) { Text("Папка") }
-                        Button(onClick = { guard { startCreate("note") } }) { Text("Заметка") }
-                    }
                     HorizontalDivider()
                     if (display.isEmpty()) {
                         Text("Пока пусто", Modifier.padding(16.dp))
@@ -452,15 +446,46 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
                         }
                     }
                     HorizontalDivider()
-                    TextButton(
-                        onClick = {
-                            guard {
-                                trash = store.listTrash()
-                                showTrash = true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                guard {
+                                    trash = store.listTrash()
+                                    showTrash = true
+                                }
                             }
-                        },
-                        modifier = Modifier.padding(8.dp)
-                    ) { Text(trashLabel) }
+                        ) { Text(trashLabel) }
+                        Spacer(Modifier.weight(1f))
+                        Box {
+                            FilledTonalButton(onClick = { guard { plusMenu = true } }) {
+                                Text("+", style = MaterialTheme.typography.titleLarge)
+                            }
+                            DropdownMenu(
+                                expanded = plusMenu,
+                                onDismissRequest = { plusMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("📁 Папка") },
+                                    onClick = {
+                                        plusMenu = false
+                                        startCreate("folder")
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("📝 Заметка") },
+                                    onClick = {
+                                        plusMenu = false
+                                        startCreate("note")
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
