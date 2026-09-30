@@ -212,11 +212,25 @@
     fmt.classList.remove('on');
   }
 
+  function resetScroll() {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
   function fit() {
+    resetScroll();
     var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
     ed.style.height = Math.max(h, 150) + 'px';
     bar.style.top = (topbar.offsetHeight + 2) + 'px';
     bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
+  }
+
+  function refit() {
+    fit();
+    setTimeout(fit, 100);
+    setTimeout(fit, 300);
+    setTimeout(fit, 700);
   }
 
   function commitTitle() {
@@ -301,10 +315,15 @@
     ed.innerHTML = new DOMParser().parseFromString(saved, 'text/html').body.innerHTML;
   }
 
-  fit();
-  window.addEventListener('resize', fit);
-  window.addEventListener('load', fit);
-  setTimeout(fit, 300);
+  refit();
+  window.addEventListener('resize', refit);
+  window.addEventListener('load', refit);
+  window.addEventListener('focus', refit);
+  window.addEventListener('pageshow', refit);
+  document.addEventListener('visibilitychange', refit);
+  window.addEventListener('scroll', function () {
+    if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) resetScroll();
+  });
   ed.addEventListener('focus', function () { setTimeout(fit, 400); });
 
   title.addEventListener('blur', commitTitle);
