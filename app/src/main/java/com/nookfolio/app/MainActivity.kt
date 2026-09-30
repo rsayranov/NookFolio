@@ -3,11 +3,13 @@ package com.nookfolio.app
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.io.File
@@ -42,8 +45,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView) -> Unit) {
+fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?) -> Unit) {
+    val context = LocalContext.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var web by remember { mutableStateOf<WebView?>(null) }
@@ -53,10 +58,35 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
     var session by remember { mutableIntStateOf(0) }
     var target by remember { mutableStateOf(opened?.parentFile ?: store.root) }
     val expanded = remember { mutableStateListOf<String>() }
-    var dialog by remember { mutableStateOf<String?>(null) }
     var version by remember { mutableIntStateOf(0) }
+    var trash by remember { mutableStateOf(store.listTrash()) }
+
+    var createKind by remember { mutableStateOf<String?>(null) }
+    var actionItem by remember { mutableStateOf<File?>(null) }
+    var renameItem by remember { mutableStateOf<File?>(null) }
+    var moveItem by remember { mutableStateOf<File?>(null) }
+    var showTrash by remember { mutableStateOf(false) }
+
     val expandedSet = expanded.toSet()
     val rows = remember(version, expandedSet) { store.flatten(expandedSet) }
+
+    fun toast(text: String) {
+        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    }
+
+    fun refresh() {
+        version++
+        trash = store.listTrash()
+    }
+
+    fun withFlush(action: () -> Unit) {
+        val w = web
+        if (w != null && opened != null) {
+            w.evaluateJavascript("flush()") { action() }
+        } else {
+            action()
+        }
+    }
 
     fun openNote(f: File) {
         val show: () -> Unit = {
@@ -74,7 +104,104 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
         }
     }
 
+    fun applyRemap(old: File, new: File) {
+        val cur = opened
+        if (cur != null) {
+            val moved = store.remap(cur, old, new)
+            if (moved != cur) {
+                opened = moved
+                session++
+                prefs.edit().putString("last", moved.path).apply()
+            }
+        }
+        target = store.remap(target, old, new)
+        val updated = expanded.map { store.remap(File(it), old, new).path }
+        expanded.clear()
+        expanded.addAll(updated)
+    }
+
+    fun applyTrash(old: File) {
+        val cur = opened
+        if (cur != null &&
+            (cur.path == old.path || cur.path.startsWith(old.path + File.separator))
+        ) {
+            opened = null
+            session++
+            web = null
+            onWebChange(null)
+            prefs.edit().remove("last").apply()
+        }
+        if (target.path == old.path || target.path.startsWith(old.path + File.separator)) {
+            target = old.parentFile ?: store.root
+        }
+        expanded.removeAll { it == old.path || it.startsWith(old.path + File.separator) }
+    }
+
+    fun doDelete(file: File) {
+        withFlush {
+            if (store.moveToTrash(file)) {
+                applyTrash(file)
+                refresh()
+            } else {
+                toast("Не удалось удалить")
+            }
+        }
+    }
+
+    fun doRename(file: File, name: String) {
+        withFlush {
+            val renamed = store.rename(file, name)
+            if (renamed == null) {
+                toast("Такое имя уже есть или оно пустое")
+            } else if (renamed != file) {
+                applyRemap(file, renamed)
+                refresh()
+            }
+        }
+    }
+
+    fun doMove(file: File, dest: File) {
+        withFlush {
+            val moved = store.move(file, dest)
+            if (moved == null) {
+                toast("В этой папке уже есть элемент с таким именем")
+            } else {
+                applyRemap(file, moved)
+                if (dest != store.root && dest.path !in expanded) expanded.add(dest.path)
+                refresh()
+            }
+        }
+    }
+
+    fun doRestore(entry: TrashEntry) {
+        val restored = store.restore(entry)
+        if (restored == null) {
+            toast("Не удалось вернуть")
+        } else {
+            refresh()
+        }
+    }
+
+    fun doCreate(kind: String, name: String) {
+        if (target != store.root && target.path !in expanded) expanded.add(target.path)
+        if (kind == "folder") {
+            if (store.createFolder(target, name) == null) {
+                toast("Такое имя уже есть или оно пустое")
+            }
+        } else {
+            val created = store.createNote(target, name)
+            if (created == null) {
+                toast("Такое имя уже есть или оно пустое")
+            } else {
+                openNote(created)
+            }
+        }
+        refresh()
+    }
+
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+
+    val trashLabel = if (trash.isEmpty()) "🗑 Корзина" else "🗑 Корзина (" + trash.size + ")"
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -90,13 +217,18 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
                         Modifier.padding(horizontal = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(onClick = { dialog = "folder" }) { Text("Папка") }
-                        Button(onClick = { dialog = "note" }) { Text("Заметка") }
+                        Button(onClick = { createKind = "folder" }) { Text("Папка") }
+                        Button(onClick = { createKind = "note" }) { Text("Заметка") }
                     }
                     Text(
                         "Создать в: " + (if (target == store.root) "корень" else target.name),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                    Text(
+                        "Удерживайте элемент: переименовать, переместить, удалить",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
                     HorizontalDivider()
                     if (rows.isEmpty()) {
@@ -118,15 +250,18 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
                                             MaterialTheme.colorScheme.secondaryContainer
                                         else Color.Transparent
                                     )
-                                    .clickable {
-                                        if (item.isFolder) {
-                                            target = item.file
-                                            if (isExpanded) expanded.remove(item.file.path)
-                                            else expanded.add(item.file.path)
-                                        } else {
-                                            openNote(item.file)
-                                        }
-                                    }
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (item.isFolder) {
+                                                target = item.file
+                                                if (isExpanded) expanded.remove(item.file.path)
+                                                else expanded.add(item.file.path)
+                                            } else {
+                                                openNote(item.file)
+                                            }
+                                        },
+                                        onLongClick = { actionItem = item.file }
+                                    )
                                     .padding(
                                         start = (16 + depth * 16).dp,
                                         top = 12.dp,
@@ -136,6 +271,14 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
                             )
                         }
                     }
+                    HorizontalDivider()
+                    TextButton(
+                        onClick = {
+                            trash = store.listTrash()
+                            showTrash = true
+                        },
+                        modifier = Modifier.padding(8.dp)
+                    ) { Text(trashLabel) }
                 }
             }
         }
@@ -166,34 +309,82 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView)
         }
     }
 
-    dialog?.let { kind ->
-        var text by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text(if (kind == "folder") "Новая папка" else "Новая заметка") },
-            text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
-                    label = { Text("Название") }
-                )
+    createKind?.let { kind ->
+        NameDialog(
+            title = if (kind == "folder") "Новая папка" else "Новая заметка",
+            initial = "",
+            confirmLabel = "Создать",
+            onConfirm = { name ->
+                createKind = null
+                doCreate(kind, name)
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (target != store.root && target.path !in expanded) {
-                        expanded.add(target.path)
-                    }
-                    if (kind == "folder") {
-                        store.createFolder(target, text)
-                    } else {
-                        store.createNote(target, text)?.let { openNote(it) }
-                    }
-                    version++
-                    dialog = null
-                }) { Text("Создать") }
+            onDismiss = { createKind = null }
+        )
+    }
+
+    actionItem?.let { file ->
+        ActionsDialog(
+            name = if (file.isDirectory) file.name else file.nameWithoutExtension,
+            onRename = {
+                actionItem = null
+                renameItem = file
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Отмена") } }
+            onMove = {
+                actionItem = null
+                moveItem = file
+            },
+            onDelete = {
+                actionItem = null
+                doDelete(file)
+            },
+            onDismiss = { actionItem = null }
+        )
+    }
+
+    renameItem?.let { file ->
+        NameDialog(
+            title = "Переименовать",
+            initial = if (file.isDirectory) file.name else file.nameWithoutExtension,
+            confirmLabel = "Готово",
+            onConfirm = { name ->
+                renameItem = null
+                doRename(file, name)
+            },
+            onDismiss = { renameItem = null }
+        )
+    }
+
+    moveItem?.let { file ->
+        val options = store.allFolders().filter { (folder, _) ->
+            folder != file.parentFile &&
+                !(file.isDirectory &&
+                    (folder.path == file.path || folder.path.startsWith(file.path + File.separator)))
+        }
+        MoveDialog(
+            title = "Переместить в…",
+            folders = options,
+            rootFile = store.root,
+            onPick = { dest ->
+                moveItem = null
+                doMove(file, dest)
+            },
+            onDismiss = { moveItem = null }
+        )
+    }
+
+    if (showTrash) {
+        TrashDialog(
+            entries = trash,
+            onRestore = { doRestore(it) },
+            onDelete = {
+                store.deleteForever(it)
+                refresh()
+            },
+            onEmpty = {
+                store.emptyTrash()
+                refresh()
+            },
+            onDismiss = { showTrash = false }
         )
     }
 }
