@@ -187,6 +187,7 @@
   var fmt = document.getElementById('fmt');
   var title = document.getElementById('title');
   var timer = null;
+  var stickBottom = false;
   var current = Android.title();
   title.value = current;
 
@@ -220,10 +221,14 @@
 
   function fit() {
     resetScroll();
+    var stick = stickBottom;
     var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
     ed.style.height = Math.max(h, 150) + 'px';
     bar.style.top = (topbar.offsetHeight + 2) + 'px';
     bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
+    if (stick) {
+      ed.scrollTop = ed.scrollHeight;
+    }
   }
 
   function refit() {
@@ -323,6 +328,9 @@
   document.addEventListener('visibilitychange', refit);
   window.addEventListener('scroll', function () {
     if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) resetScroll();
+  });
+  ed.addEventListener('scroll', function () {
+    stickBottom = (ed.scrollHeight - ed.scrollTop - ed.clientHeight) < 40;
   });
   ed.addEventListener('focus', function () { setTimeout(fit, 400); });
 
