@@ -3,6 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<style id="docstyle">
+  h1 { font-size: 1.6em; margin: 0.4em 0; }
+  h2 { font-size: 1em; font-weight: bold; margin: 0.4em 0; }
+  input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
+  ol.n1 { list-style-type: decimal; }
+  ol.n2 { list-style-type: decimal; }
+  ol.n2 > li::marker { content: counter(list-item) ") "; }
+  ol.n3 { list-style-type: upper-roman; }
+  ol.n4 { list-style-type: upper-alpha; }
+  ol.n5 { list-style-type: lower-alpha; }
+  ol.n6 { list-style-type: lower-alpha; }
+  ol.n6 > li::marker { content: counter(list-item, lower-alpha) ") "; }
+  ul.b1 { list-style-type: disc; }
+  ul.b2 { list-style-type: circle; }
+  ul.b3 { list-style-type: "– "; }
+  ul.b4 { list-style-type: "> "; }
+</style>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; }
   body { font-family: sans-serif; font-size: 17px; }
@@ -11,18 +28,25 @@
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
-  input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
 
-  #bar { display: none; position: fixed; right: 8px; top: 48px; width: 240px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 4px 0; }
+  #bar { display: none; position: fixed; right: 8px; top: 48px; width: min(300px, calc(100vw - 16px)); max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 4px 0; }
   #bar.open { display: block; }
-  #bar .item { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 12px 14px; font-size: 16px; font-family: sans-serif; color: #000; }
-  #bar .item:active { background: #e6e6e6; }
-  #bar .ic { display: inline-block; width: 30px; text-align: center; margin-right: 8px; }
+  .page { display: none; }
+  .page.show { display: block; }
+  #bar button { font-family: sans-serif; color: #000; }
+  #bar .item { display: flex; align-items: center; width: 100%; text-align: left; border: none; background: transparent; padding: 11px 14px; font-size: 16px; }
+  #bar .item:active, #bar .cell:active { background: #e6e6e6; }
+  #bar .ic { display: inline-block; width: 30px; text-align: center; margin-right: 8px; flex: none; }
+  #bar .arr { margin-left: auto; color: #888; padding-left: 8px; }
   #bar .sep { height: 1px; background: #ddd; margin: 4px 0; }
-  #bar .lbl { font-size: 13px; color: #777; padding: 8px 14px 2px 14px; }
-  #bar .row { display: flex; gap: 12px; padding: 6px 14px 10px 14px; }
-  #bar .sw { width: 32px; height: 32px; border: 1px solid #777; border-radius: 50%; padding: 0; font-size: 14px; color: #000; }
-  #bar .sw.hl { border-radius: 6px; }
+  #bar .split { display: flex; gap: 6px; padding: 6px 8px; }
+  #bar .split button { flex: 1; height: 40px; border: 1px solid #ccc; border-radius: 8px; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
+  #bar .split button:active { background: #e0e0e0; }
+  #bar .back { color: #1976d2; font-weight: bold; }
+  #bar .dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #777; margin-right: 14px; flex: none; box-sizing: border-box; }
+  #bar .dot.sq { border-radius: 5px; }
+  #bar .grid { display: flex; flex-wrap: wrap; padding: 6px 8px; }
+  #bar .cell { width: 16.66%; height: 44px; border: none; background: transparent; font-size: 22px; padding: 0; border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -30,39 +54,130 @@
   <button data-c="menu">☰</button>
   <button id="fmt" data-c="toggle">Аа</button>
 </div>
+
 <div id="bar">
-  <button class="item" data-c="bold"><span class="ic"><b>B</b></span>Жирный</button>
-  <button class="item" data-c="italic"><span class="ic"><i>I</i></span>Курсив</button>
-  <button class="item" data-c="underline"><span class="ic"><u>U</u></span>Подчёркнутый</button>
-  <button class="item" data-c="strikeThrough"><span class="ic"><s>S</s></span>Зачёркнутый</button>
-  <div class="sep"></div>
-  <button class="item" data-c="formatBlock" data-v="H1"><span class="ic">H1</span>Заголовок 1</button>
-  <button class="item" data-c="formatBlock" data-v="H2"><span class="ic">H2</span>Заголовок 2</button>
-  <button class="item" data-c="formatBlock" data-v="P"><span class="ic">¶</span>Обычный текст</button>
-  <div class="sep"></div>
-  <button class="item" data-c="insertUnorderedList"><span class="ic">•</span>Маркированный список</button>
-  <button class="item" data-c="insertOrderedList"><span class="ic">1.</span>Нумерованный список</button>
-  <button class="item" data-c="check"><span class="ic">☑</span>Чек-лист</button>
-  <div class="sep"></div>
-  <button class="item" data-c="indent"><span class="ic">→</span>Отступ больше</button>
-  <button class="item" data-c="outdent"><span class="ic">⇤</span>Отступ меньше</button>
-  <div class="sep"></div>
-  <div class="lbl">Цвет текста</div>
-  <div class="row">
-    <button class="sw" data-c="foreColor" data-v="#000000" style="background:#000000"></button>
-    <button class="sw" data-c="foreColor" data-v="#d32f2f" style="background:#d32f2f"></button>
-    <button class="sw" data-c="foreColor" data-v="#1976d2" style="background:#1976d2"></button>
-    <button class="sw" data-c="foreColor" data-v="#388e3c" style="background:#388e3c"></button>
-    <button class="sw" data-c="foreColor" data-v="#f57c00" style="background:#f57c00"></button>
+  <div class="page show" id="p-main">
+    <div class="split">
+      <button data-a="undo"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg></button>
+      <button data-a="clear">T<sub>x</sub></button>
+      <button data-a="redo"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg></button>
+    </div>
+    <div class="split">
+      <button data-a="outdent">← Отступ</button>
+      <button data-a="indent">Отступ →</button>
+    </div>
+    <div class="sep"></div>
+    <button class="item" data-a="bold"><span class="ic"><b>B</b></span>Жирный</button>
+    <button class="item" data-a="italic"><span class="ic"><i>I</i></span>Курсив</button>
+    <button class="item" data-a="underline"><span class="ic"><u>U</u></span>Подчёркнутый</button>
+    <button class="item" data-a="strike"><span class="ic"><s>S</s></span>Зачёркнутый</button>
+    <button class="item" data-a="clear"><span class="ic">T<sub>x</sub></span>Очистить форматирование</button>
+    <div class="sep"></div>
+    <button class="item" data-go="head"><span class="ic"><b>H</b></span>Заголовки<span class="arr">›</span></button>
+    <button class="item" data-go="ol"><span class="ic">1.</span>Нумерованный список<span class="arr">›</span></button>
+    <button class="item" data-go="ul"><span class="ic">•</span>Маркированный список<span class="arr">›</span></button>
+    <button class="item" data-a="check"><span class="ic">☑</span>Чек-лист</button>
+    <div class="sep"></div>
+    <button class="item" data-go="fc"><span class="ic"><b style="color:#d32f2f">A</b></span>Цвет текста<span class="arr">›</span></button>
+    <button class="item" data-go="hc"><span class="ic"><span style="background:#fff176;padding:0 4px">A</span></span>Цвет маркера<span class="arr">›</span></button>
   </div>
-  <div class="lbl">Маркер</div>
-  <div class="row">
-    <button class="sw hl" data-c="hiliteColor" data-v="#fff176" style="background:#fff176"></button>
-    <button class="sw hl" data-c="hiliteColor" data-v="#a5d6a7" style="background:#a5d6a7"></button>
-    <button class="sw hl" data-c="hiliteColor" data-v="#f8bbd0" style="background:#f8bbd0"></button>
-    <button class="sw hl" data-c="hiliteColor" data-v="transparent" style="background:#ffffff">✕</button>
+
+  <div class="page" id="p-head">
+    <button class="item back" data-go="main">‹ Заголовки</button>
+    <div class="sep"></div>
+    <button class="item" data-a="h" data-v="H1"><span class="ic" style="font-size:20px"><b>H</b></span>Название</button>
+    <button class="item" data-a="h" data-v="H2"><span class="ic"><b>h</b></span>Малый</button>
+    <button class="item" data-a="h" data-v="P"><span class="ic">¶</span>Обычный текст</button>
+  </div>
+
+  <div class="page" id="p-ol">
+    <button class="item back" data-go="main">‹ Нумерованный список</button>
+    <div class="sep"></div>
+    <button class="item" data-a="ol" data-v="n1"><span class="ic">1.</span>Арабские цифры с точкой</button>
+    <button class="item" data-a="ol" data-v="n2"><span class="ic">1)</span>Арабские цифры со скобкой</button>
+    <button class="item" data-a="ol" data-v="n3"><span class="ic">I.</span>Римские цифры с точкой</button>
+    <button class="item" data-a="ol" data-v="n4"><span class="ic">A.</span>Заглавные латинские буквы с точкой</button>
+    <button class="item" data-a="ol" data-v="n5"><span class="ic">a.</span>Строчные латинские буквы с точкой</button>
+    <button class="item" data-a="ol" data-v="n6"><span class="ic">a)</span>Строчные латинские буквы со скобкой</button>
+  </div>
+
+  <div class="page" id="p-ul">
+    <button class="item back" data-go="main">‹ Маркированный список</button>
+    <div class="sep"></div>
+    <button class="item" data-a="ul" data-v="b1"><span class="ic">●</span>Залитый кружок</button>
+    <button class="item" data-a="ul" data-v="b2"><span class="ic">○</span>Пустой кружок</button>
+    <button class="item" data-a="ul" data-v="b3"><span class="ic">–</span>Тире</button>
+    <button class="item" data-a="ul" data-v="b4"><span class="ic">&gt;</span>Знак больше</button>
+    <button class="item" data-go="emoji"><span class="ic">🙂</span>Эмодзи<span class="arr">›</span></button>
+  </div>
+
+  <div class="page" id="p-emoji">
+    <button class="item back" data-go="ul">‹ Эмодзи</button>
+    <div class="sep"></div>
+    <div class="grid">
+      <button class="cell" data-a="emoji" data-v="⭐">⭐</button>
+      <button class="cell" data-a="emoji" data-v="✅">✅</button>
+      <button class="cell" data-a="emoji" data-v="❤️">❤️</button>
+      <button class="cell" data-a="emoji" data-v="🔥">🔥</button>
+      <button class="cell" data-a="emoji" data-v="📌">📌</button>
+      <button class="cell" data-a="emoji" data-v="👉">👉</button>
+      <button class="cell" data-a="emoji" data-v="➡️">➡️</button>
+      <button class="cell" data-a="emoji" data-v="✔️">✔️</button>
+      <button class="cell" data-a="emoji" data-v="❌">❌</button>
+      <button class="cell" data-a="emoji" data-v="⚠️">⚠️</button>
+      <button class="cell" data-a="emoji" data-v="💡">💡</button>
+      <button class="cell" data-a="emoji" data-v="📍">📍</button>
+      <button class="cell" data-a="emoji" data-v="🔹">🔹</button>
+      <button class="cell" data-a="emoji" data-v="🔸">🔸</button>
+      <button class="cell" data-a="emoji" data-v="🟢">🟢</button>
+      <button class="cell" data-a="emoji" data-v="🔴">🔴</button>
+      <button class="cell" data-a="emoji" data-v="🟡">🟡</button>
+      <button class="cell" data-a="emoji" data-v="🔵">🔵</button>
+      <button class="cell" data-a="emoji" data-v="⚡">⚡</button>
+      <button class="cell" data-a="emoji" data-v="🎯">🎯</button>
+      <button class="cell" data-a="emoji" data-v="📎">📎</button>
+      <button class="cell" data-a="emoji" data-v="📝">📝</button>
+      <button class="cell" data-a="emoji" data-v="🌟">🌟</button>
+      <button class="cell" data-a="emoji" data-v="✨">✨</button>
+      <button class="cell" data-a="emoji" data-v="🚀">🚀</button>
+      <button class="cell" data-a="emoji" data-v="💰">💰</button>
+      <button class="cell" data-a="emoji" data-v="📅">📅</button>
+      <button class="cell" data-a="emoji" data-v="🔔">🔔</button>
+      <button class="cell" data-a="emoji" data-v="❗">❗</button>
+      <button class="cell" data-a="emoji" data-v="❓">❓</button>
+      <button class="cell" data-a="emoji" data-v="🏠">🏠</button>
+      <button class="cell" data-a="emoji" data-v="🛒">🛒</button>
+      <button class="cell" data-a="emoji" data-v="📞">📞</button>
+      <button class="cell" data-a="emoji" data-v="🎁">🎁</button>
+      <button class="cell" data-a="emoji" data-v="☕">☕</button>
+      <button class="cell" data-a="emoji" data-v="🌿">🌿</button>
+    </div>
+  </div>
+
+  <div class="page" id="p-fc">
+    <button class="item back" data-go="main">‹ Цвет текста</button>
+    <div class="sep"></div>
+    <button class="item" data-a="fc" data-v="#000000"><span class="dot" style="background:#000000"></span>Чёрный</button>
+    <button class="item" data-a="fc" data-v="#ffffff"><span class="dot" style="background:#ffffff"></span>Белый</button>
+    <button class="item" data-a="fc" data-v="#d32f2f"><span class="dot" style="background:#d32f2f"></span>Красный</button>
+    <button class="item" data-a="fc" data-v="#f57c00"><span class="dot" style="background:#f57c00"></span>Оранжевый</button>
+    <button class="item" data-a="fc" data-v="#fbc02d"><span class="dot" style="background:#fbc02d"></span>Жёлтый</button>
+    <button class="item" data-a="fc" data-v="#388e3c"><span class="dot" style="background:#388e3c"></span>Зелёный</button>
+    <button class="item" data-a="fc" data-v="#00acc1"><span class="dot" style="background:#00acc1"></span>Голубой</button>
+    <button class="item" data-a="fc" data-v="#1976d2"><span class="dot" style="background:#1976d2"></span>Синий</button>
+  </div>
+
+  <div class="page" id="p-hc">
+    <button class="item back" data-go="main">‹ Цвет маркера</button>
+    <div class="sep"></div>
+    <button class="item" data-a="hc" data-v="#ef9a9a"><span class="dot sq" style="background:#ef9a9a"></span>Красный</button>
+    <button class="item" data-a="hc" data-v="#ffcc80"><span class="dot sq" style="background:#ffcc80"></span>Оранжевый</button>
+    <button class="item" data-a="hc" data-v="#fff176"><span class="dot sq" style="background:#fff176"></span>Жёлтый</button>
+    <button class="item" data-a="hc" data-v="#a5d6a7"><span class="dot sq" style="background:#a5d6a7"></span>Зелёный</button>
+    <button class="item" data-a="hc" data-v="#80deea"><span class="dot sq" style="background:#80deea"></span>Голубой</button>
   </div>
 </div>
+
 <input id="title" type="text" placeholder="Заголовок" autocomplete="off">
 <div id="ed" contenteditable="true"></div>
 <script>
@@ -75,16 +190,33 @@
   var current = Android.title();
   title.value = current;
 
-  function fit() {
-    var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
-    ed.style.height = Math.max(h, 150) + 'px';
-    bar.style.top = (topbar.offsetHeight + 2) + 'px';
-    bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
+  var pages = ['main', 'head', 'ol', 'ul', 'emoji', 'fc', 'hc'];
+  var keep = { undo: 1, redo: 1, clear: 1, indent: 1, outdent: 1, bold: 1, italic: 1, underline: 1, strike: 1 };
+
+  function showPage(name) {
+    for (var i = 0; i < pages.length; i++) {
+      var p = document.getElementById('p-' + pages[i]);
+      if (pages[i] === name) p.classList.add('show'); else p.classList.remove('show');
+    }
+    bar.scrollTop = 0;
+  }
+
+  function openMenu() {
+    showPage('main');
+    bar.classList.add('open');
+    fmt.classList.add('on');
   }
 
   function closeMenu() {
     bar.classList.remove('open');
     fmt.classList.remove('on');
+  }
+
+  function fit() {
+    var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
+    ed.style.height = Math.max(h, 150) + 'px';
+    bar.style.top = (topbar.offsetHeight + 2) + 'px';
+    bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
   }
 
   function commitTitle() {
@@ -95,10 +227,73 @@
   }
 
   function fullDoc() {
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' + ed.innerHTML + '</body></html>';
+    var css = document.getElementById('docstyle').outerHTML;
+    return '<!DOCTYPE html><html><head><meta charset="utf-8">' + css + '</head><body>' + ed.innerHTML + '</body></html>';
   }
   function flush() { clearTimeout(timer); commitTitle(); Android.save(fullDoc()); }
   function later() { clearTimeout(timer); timer = setTimeout(flush, 500); }
+
+  function listEl(tag) {
+    var s = window.getSelection();
+    if (!s.rangeCount) return null;
+    var n = s.anchorNode;
+    var el = n ? (n.nodeType === 1 ? n : n.parentElement) : null;
+    if (!el) return null;
+    var l = el.closest(tag);
+    return (l && ed.contains(l)) ? l : null;
+  }
+
+  function applyList(tag, cls, emoji) {
+    var cmd = tag === 'ol' ? 'insertOrderedList' : 'insertUnorderedList';
+    var l = listEl(tag);
+    if (l) {
+      var same = emoji
+        ? l.style.listStyleType.indexOf(emoji) >= 0
+        : (l.className === cls && !l.style.listStyleType);
+      if (same) { document.execCommand(cmd); return; }
+    } else {
+      document.execCommand(cmd);
+      l = listEl(tag);
+    }
+    if (l) {
+      l.className = emoji ? '' : cls;
+      l.style.listStyleType = emoji ? '"' + emoji + ' "' : '';
+      if (!l.getAttribute('style')) l.removeAttribute('style');
+      if (!l.getAttribute('class')) l.removeAttribute('class');
+    }
+  }
+
+  function clearFormat() {
+    document.execCommand('removeFormat');
+    var hs = ed.querySelectorAll('h1,h2,h3,h4,h5,h6');
+    var sel = window.getSelection();
+    var found = false;
+    for (var i = 0; i < hs.length; i++) {
+      if (sel.containsNode(hs[i], true)) found = true;
+    }
+    if (found) document.execCommand('formatBlock', false, 'P');
+  }
+
+  function run(a, v) {
+    switch (a) {
+      case 'undo': document.execCommand('undo'); break;
+      case 'redo': document.execCommand('redo'); break;
+      case 'clear': clearFormat(); break;
+      case 'indent': document.execCommand('indent'); break;
+      case 'outdent': document.execCommand('outdent'); break;
+      case 'bold': document.execCommand('bold'); break;
+      case 'italic': document.execCommand('italic'); break;
+      case 'underline': document.execCommand('underline'); break;
+      case 'strike': document.execCommand('strikeThrough'); break;
+      case 'h': document.execCommand('formatBlock', false, v); break;
+      case 'ol': applyList('ol', v, null); break;
+      case 'ul': applyList('ul', v, null); break;
+      case 'emoji': applyList('ul', '', v); break;
+      case 'check': document.execCommand('insertHTML', false, '<div><input type="checkbox">&nbsp;</div>'); break;
+      case 'fc': document.execCommand('foreColor', false, v); break;
+      case 'hc': document.execCommand('hiliteColor', false, v); break;
+    }
+  }
 
   document.execCommand('styleWithCSS', false, true);
   var saved = Android.load();
@@ -136,22 +331,21 @@
     if (!b) return;
     if (b.dataset.c === 'menu') { flush(); closeMenu(); ed.blur(); title.blur(); Android.openMenu(); return; }
     if (b.dataset.c === 'toggle') {
-      var open = bar.classList.toggle('open');
-      fmt.classList.toggle('on', open);
+      if (bar.classList.contains('open')) closeMenu(); else openMenu();
       fit();
     }
   });
 
   bar.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-c]');
+    var b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.go) { showPage(b.dataset.go); return; }
+    var a = b.dataset.a;
+    if (!a) return;
     ed.focus();
-    if (b.dataset.c === 'check') {
-      document.execCommand('insertHTML', false, '<div><input type="checkbox">&nbsp;</div>');
-    } else {
-      document.execCommand(b.dataset.c, false, b.dataset.v || null);
-    }
+    run(a, b.dataset.v);
     later();
+    if (!keep[a]) closeMenu();
   });
 </script>
 </body>
