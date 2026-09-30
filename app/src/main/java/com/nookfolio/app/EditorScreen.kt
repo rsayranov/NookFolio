@@ -8,7 +8,10 @@ import android.webkit.WebView
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import java.io.File
 
 class EditorBridge(
@@ -54,6 +57,19 @@ fun EditorScreen(
     onRenamed: (File) -> Unit,
     onWeb: (WebView) -> Unit
 ) {
+    val owner = LocalLifecycleOwner.current
+    var webRef: WebView? by remember { mutableStateOf(null) }
+
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                webRef?.evaluateJavascript("refit()", null)
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
     Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -62,6 +78,7 @@ fun EditorScreen(
                     settings.javaScriptEnabled = true
                     addJavascriptInterface(EditorBridge(file, onMenu, onRenamed), "Android")
                     loadUrl("file:///android_asset/editor.html")
+                    webRef = this
                     onWeb(this)
                 }
             }
