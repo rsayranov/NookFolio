@@ -11,8 +11,23 @@ android {
         applicationId = "com.nookfolio.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionName = "0.1"
+    }
+
+    signingConfigs {
+        create("nookfolio") {
+            storeFile = file("nookfolio.jks")
+            storePassword = "android"
+            keyAlias = "nookfolio"
+            keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("nookfolio")
+        }
     }
 
     buildFeatures { compose = true }
