@@ -338,6 +338,7 @@ fun AppScreen(store: NoteStore, prefs: SharedPreferences, onWebChange: (WebView?
 
     ModalNavigationDrawer(
         drawerState = drawer,
+        gesturesEnabled = drawer.isOpen,
         drawerContent = {
             ModalDrawerSheet {
                 Column(Modifier.fillMaxHeight()) {
