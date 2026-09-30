@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Restore signing key
+        run: tr -d ' \r\n' < app/nookfolio.jks.b64 | base64 -d > app/nookfolio.jks
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
