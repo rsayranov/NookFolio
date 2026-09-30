@@ -6,7 +6,9 @@
 <style id="docstyle">
   h1 { font-size: 1.6em; margin: 0.4em 0; }
   h2 { font-size: 1em; font-weight: bold; margin: 0.4em 0; }
+  p { margin: 0; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
+  .done { text-decoration: line-through; color: #8a8a8a; }
   ol.n1 { list-style-type: decimal; }
   ol.n2 { list-style-type: decimal; }
   ol.n2 > li::marker { content: counter(list-item) ") "; }
@@ -24,157 +26,216 @@
   html, body { margin: 0; padding: 0; overflow: hidden; }
   body { font-family: sans-serif; font-size: 17px; }
   #topbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #ddd; }
-  #topbar button { height: 36px; min-width: 44px; border: 1px solid #bbb; border-radius: 8px; background: #fff; font-size: 18px; padding: 0 10px; }
+  #topbar button { height: 36px; min-width: 44px; border: 1px solid #bbb; border-radius: 8px; background: #fff; color: #000; font-size: 18px; padding: 0; display: flex; align-items: center; justify-content: center; }
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
 
-  #bar { display: none; position: fixed; right: 8px; top: 48px; width: min(300px, calc(100vw - 16px)); max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 4px 0; }
+  .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; display: block; }
+  #bar { display: none; position: fixed; right: 8px; top: 48px; box-sizing: border-box; width: 160px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 6px; }
   #bar.open { display: block; }
+  #bar.wide { width: min(264px, calc(100vw - 16px)); }
   .page { display: none; }
   .page.show { display: block; }
   #bar button { font-family: sans-serif; color: #000; }
-  #bar .item { display: flex; align-items: center; width: 100%; text-align: left; border: none; background: transparent; padding: 11px 14px; font-size: 16px; }
-  #bar .item:active, #bar .cell:active { background: #e6e6e6; }
-  #bar .ic { display: inline-block; width: 30px; text-align: center; margin-right: 8px; flex: none; }
-  #bar .arr { margin-left: auto; color: #888; padding-left: 8px; }
-  #bar .sep { height: 1px; background: #ddd; margin: 4px 0; }
-  #bar .split { display: flex; gap: 6px; padding: 6px 8px; }
-  #bar .split button { flex: 1; height: 40px; border: 1px solid #ccc; border-radius: 8px; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
-  #bar .split button:active { background: #e0e0e0; }
-  #bar .back { color: #1976d2; font-weight: bold; }
-  #bar .dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #777; margin-right: 14px; flex: none; box-sizing: border-box; }
-  #bar .dot.sq { border-radius: 5px; }
-  #bar .grid { display: flex; flex-wrap: wrap; padding: 6px 8px; }
-  #bar .cell { width: 16.66%; height: 44px; border: none; background: transparent; font-size: 22px; padding: 0; border-radius: 8px; }
+  .row { display: flex; gap: 5px; margin-bottom: 5px; }
+  .row:last-child { margin-bottom: 0; }
+  .btn { flex: 1; min-width: 0; height: 36px; border: 1px solid #ccc; border-radius: 8px; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
+  .btn:active { background: #e0e0e0; }
+  .back { display: flex; align-items: center; width: 100%; height: 28px; border: none; background: transparent; color: #1976d2; padding: 0 2px; margin-bottom: 4px; }
+  .back .ic { width: 20px; height: 20px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 5px; }
+  .grid .btn { flex: none; }
+  .c3 { width: calc((100% - 10px) / 3); }
+  .c6 { width: calc((100% - 25px) / 6); font-size: 20px; }
+  .dot { width: 20px; height: 20px; border-radius: 50%; border: 1px solid #777; box-sizing: border-box; }
+  .dot.sq { border-radius: 5px; }
+  .smp { display: inline-flex; align-items: baseline; font-size: 18px; line-height: 1; }
+  .pr { width: 6px; height: 13px; margin-left: 1px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; overflow: visible; }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></symbol>
+  <symbol id="i-outdent" viewBox="0 0 24 24"><polyline points="7 8 3 12 7 16"/><line x1="21" x2="11" y1="12" y2="12"/><line x1="21" x2="11" y1="6" y2="6"/><line x1="21" x2="11" y1="18" y2="18"/></symbol>
+  <symbol id="i-indent" viewBox="0 0 24 24"><polyline points="3 8 7 12 3 16"/><line x1="21" x2="11" y1="12" y2="12"/><line x1="21" x2="11" y1="6" y2="6"/><line x1="21" x2="11" y1="18" y2="18"/></symbol>
+  <symbol id="i-bold" viewBox="0 0 24 24"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></symbol>
+  <symbol id="i-italic" viewBox="0 0 24 24"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></symbol>
+  <symbol id="i-underline" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></symbol>
+  <symbol id="i-strike" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></symbol>
+  <symbol id="i-heading" viewBox="0 0 24 24"><path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
+  <symbol id="i-ol" viewBox="0 0 24 24"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></symbol>
+  <symbol id="i-ul" viewBox="0 0 24 24"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></symbol>
+  <symbol id="i-fc" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/></symbol>
+  <symbol id="i-hc" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+  <symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M5 20h6"/><path d="M13 4 8 20"/><path d="m15 15 5 5"/><path d="m20 15-5 5"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-h1" viewBox="0 0 24 24"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="m17 12 3-2v8"/></symbol>
+  <symbol id="i-h2" viewBox="0 0 24 24"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/></symbol>
+  <symbol id="i-para" viewBox="0 0 24 24"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></symbol>
+</svg>
+
 <div id="topbar">
-  <button data-c="menu">☰</button>
-  <button id="fmt" data-c="toggle">Аа</button>
+  <button data-c="menu" aria-label="Меню"><svg class="ic"><use href="#i-menu"/></svg></button>
+  <button id="fmt" data-c="toggle" aria-label="Форматирование">Аа</button>
 </div>
 
 <div id="bar">
   <div class="page show" id="p-main">
-    <div class="split">
-      <button data-a="undo"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg></button>
-      <button data-a="clear">T<sub>x</sub></button>
-      <button data-a="redo"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg></button>
+    <div class="row">
+      <button class="btn" data-a="undo" aria-label="Отменить"><svg class="ic"><use href="#i-undo"/></svg></button>
+      <button class="btn" data-a="redo" aria-label="Повторить"><svg class="ic"><use href="#i-redo"/></svg></button>
     </div>
-    <div class="split">
-      <button data-a="outdent">← Отступ</button>
-      <button data-a="indent">Отступ →</button>
+    <div class="row">
+      <button class="btn" data-a="outdent" aria-label="Отступ меньше"><svg class="ic"><use href="#i-outdent"/></svg></button>
+      <button class="btn" data-a="indent" aria-label="Отступ больше"><svg class="ic"><use href="#i-indent"/></svg></button>
     </div>
-    <div class="sep"></div>
-    <button class="item" data-a="bold"><span class="ic"><b>B</b></span>Жирный</button>
-    <button class="item" data-a="italic"><span class="ic"><i>I</i></span>Курсив</button>
-    <button class="item" data-a="underline"><span class="ic"><u>U</u></span>Подчёркнутый</button>
-    <button class="item" data-a="strike"><span class="ic"><s>S</s></span>Зачёркнутый</button>
-    <button class="item" data-a="clear"><span class="ic">T<sub>x</sub></span>Очистить форматирование</button>
-    <div class="sep"></div>
-    <button class="item" data-go="head"><span class="ic"><b>H</b></span>Заголовки<span class="arr">›</span></button>
-    <button class="item" data-go="ol"><span class="ic">1.</span>Нумерованный список<span class="arr">›</span></button>
-    <button class="item" data-go="ul"><span class="ic">•</span>Маркированный список<span class="arr">›</span></button>
-    <button class="item" data-a="check"><span class="ic">☑</span>Чек-лист</button>
-    <div class="sep"></div>
-    <button class="item" data-go="fc"><span class="ic"><b style="color:#d32f2f">A</b></span>Цвет текста<span class="arr">›</span></button>
-    <button class="item" data-go="hc"><span class="ic"><span style="background:#fff176;padding:0 4px">A</span></span>Цвет маркера<span class="arr">›</span></button>
+    <div class="row">
+      <button class="btn" data-a="bold" aria-label="Жирный"><svg class="ic"><use href="#i-bold"/></svg></button>
+      <button class="btn" data-a="italic" aria-label="Курсив"><svg class="ic"><use href="#i-italic"/></svg></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-a="underline" aria-label="Подчёркнутый"><svg class="ic"><use href="#i-underline"/></svg></button>
+      <button class="btn" data-a="strike" aria-label="Зачёркнутый"><svg class="ic"><use href="#i-strike"/></svg></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-go="head" aria-label="Заголовки"><svg class="ic"><use href="#i-heading"/></svg></button>
+      <button class="btn" data-a="check" aria-label="Чек-лист"><svg class="ic"><use href="#i-check"/></svg></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-go="ol" aria-label="Нумерованный список"><svg class="ic"><use href="#i-ol"/></svg></button>
+      <button class="btn" data-go="ul" aria-label="Маркированный список"><svg class="ic"><use href="#i-ul"/></svg></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-go="fc" aria-label="Цвет текста"><svg class="ic"><use href="#i-fc"/></svg></button>
+      <button class="btn" data-go="hc" aria-label="Цвет маркера"><svg class="ic"><use href="#i-hc"/></svg></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-a="clear" aria-label="Очистить форматирование"><svg class="ic"><use href="#i-clear"/></svg></button>
+      <button class="btn" data-go="ins" aria-label="Вставка"><svg class="ic"><use href="#i-clip"/></svg></button>
+    </div>
+  </div>
+
+  <div class="page" id="p-ins">
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="grid">
+      <button class="btn c3" data-a="ins" data-v="image" aria-label="Изображение"><svg class="ic"><use href="#i-image"/></svg></button>
+      <button class="btn c3" data-a="ins" data-v="camera" aria-label="Камера"><svg class="ic"><use href="#i-camera"/></svg></button>
+      <button class="btn c3" data-a="ins" data-v="scan" aria-label="Сканер"><svg class="ic"><use href="#i-scan"/></svg></button>
+      <button class="btn c3" data-a="ins" data-v="voice" aria-label="Голосовая заметка"><svg class="ic"><use href="#i-mic"/></svg></button>
+      <button class="btn c3" data-a="ins" data-v="file" aria-label="Файл"><svg class="ic"><use href="#i-file"/></svg></button>
+    </div>
   </div>
 
   <div class="page" id="p-head">
-    <button class="item back" data-go="main">‹ Заголовки</button>
-    <div class="sep"></div>
-    <button class="item" data-a="h" data-v="H1"><span class="ic" style="font-size:20px"><b>H</b></span>Название</button>
-    <button class="item" data-a="h" data-v="H2"><span class="ic"><b>h</b></span>Малый</button>
-    <button class="item" data-a="h" data-v="P"><span class="ic">¶</span>Обычный текст</button>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="grid">
+      <button class="btn c3" data-a="h" data-v="H1" aria-label="Название"><svg class="ic"><use href="#i-h1"/></svg></button>
+      <button class="btn c3" data-a="h" data-v="H2" aria-label="Малый"><svg class="ic"><use href="#i-h2"/></svg></button>
+      <button class="btn c3" data-a="h" data-v="P" aria-label="Обычный текст"><svg class="ic"><use href="#i-para"/></svg></button>
+    </div>
   </div>
 
   <div class="page" id="p-ol">
-    <button class="item back" data-go="main">‹ Нумерованный список</button>
-    <div class="sep"></div>
-    <button class="item" data-a="ol" data-v="n1"><span class="ic">1.</span>Арабские цифры с точкой</button>
-    <button class="item" data-a="ol" data-v="n2"><span class="ic">1)</span>Арабские цифры со скобкой</button>
-    <button class="item" data-a="ol" data-v="n3"><span class="ic">I.</span>Римские цифры с точкой</button>
-    <button class="item" data-a="ol" data-v="n4"><span class="ic">A.</span>Заглавные латинские буквы с точкой</button>
-    <button class="item" data-a="ol" data-v="n5"><span class="ic">a.</span>Строчные латинские буквы с точкой</button>
-    <button class="item" data-a="ol" data-v="n6"><span class="ic">a)</span>Строчные латинские буквы со скобкой</button>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="grid">
+      <button class="btn c3" data-a="ol" data-v="n1"><span class="smp">1.</span></button>
+      <button class="btn c3" data-a="ol" data-v="n2"><span class="smp">1<svg class="pr" viewBox="0 0 6 13"><path d="M1 0.8Q5.4 6.5 1 12.2"/></svg></span></button>
+      <button class="btn c3" data-a="ol" data-v="n3"><span class="smp">I.</span></button>
+      <button class="btn c3" data-a="ol" data-v="n4"><span class="smp">A.</span></button>
+      <button class="btn c3" data-a="ol" data-v="n5"><span class="smp">a.</span></button>
+      <button class="btn c3" data-a="ol" data-v="n6"><span class="smp">a<svg class="pr" viewBox="0 0 6 13"><path d="M1 0.8Q5.4 6.5 1 12.2"/></svg></span></button>
+    </div>
   </div>
 
   <div class="page" id="p-ul">
-    <button class="item back" data-go="main">‹ Маркированный список</button>
-    <div class="sep"></div>
-    <button class="item" data-a="ul" data-v="b1"><span class="ic">●</span>Залитый кружок</button>
-    <button class="item" data-a="ul" data-v="b2"><span class="ic">○</span>Пустой кружок</button>
-    <button class="item" data-a="ul" data-v="b3"><span class="ic">–</span>Тире</button>
-    <button class="item" data-a="ul" data-v="b4"><span class="ic">&gt;</span>Знак больше</button>
-    <button class="item" data-go="emoji"><span class="ic">🙂</span>Эмодзи<span class="arr">›</span></button>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="grid">
+      <button class="btn c3" data-a="ul" data-v="b1" aria-label="Залитый кружок">●</button>
+      <button class="btn c3" data-a="ul" data-v="b2" aria-label="Пустой кружок">○</button>
+      <button class="btn c3" data-a="ul" data-v="b3" aria-label="Тире">–</button>
+      <button class="btn c3" data-a="ul" data-v="b4" aria-label="Знак больше">&gt;</button>
+      <button class="btn c3" data-go="emoji" aria-label="Эмодзи"><svg class="ic"><use href="#i-smile"/></svg></button>
+    </div>
   </div>
 
   <div class="page" id="p-emoji">
-    <button class="item back" data-go="ul">‹ Эмодзи</button>
-    <div class="sep"></div>
+    <button class="back" data-go="ul" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
     <div class="grid">
-      <button class="cell" data-a="emoji" data-v="⭐">⭐</button>
-      <button class="cell" data-a="emoji" data-v="✅">✅</button>
-      <button class="cell" data-a="emoji" data-v="❤️">❤️</button>
-      <button class="cell" data-a="emoji" data-v="🔥">🔥</button>
-      <button class="cell" data-a="emoji" data-v="📌">📌</button>
-      <button class="cell" data-a="emoji" data-v="👉">👉</button>
-      <button class="cell" data-a="emoji" data-v="➡️">➡️</button>
-      <button class="cell" data-a="emoji" data-v="✔️">✔️</button>
-      <button class="cell" data-a="emoji" data-v="❌">❌</button>
-      <button class="cell" data-a="emoji" data-v="⚠️">⚠️</button>
-      <button class="cell" data-a="emoji" data-v="💡">💡</button>
-      <button class="cell" data-a="emoji" data-v="📍">📍</button>
-      <button class="cell" data-a="emoji" data-v="🔹">🔹</button>
-      <button class="cell" data-a="emoji" data-v="🔸">🔸</button>
-      <button class="cell" data-a="emoji" data-v="🟢">🟢</button>
-      <button class="cell" data-a="emoji" data-v="🔴">🔴</button>
-      <button class="cell" data-a="emoji" data-v="🟡">🟡</button>
-      <button class="cell" data-a="emoji" data-v="🔵">🔵</button>
-      <button class="cell" data-a="emoji" data-v="⚡">⚡</button>
-      <button class="cell" data-a="emoji" data-v="🎯">🎯</button>
-      <button class="cell" data-a="emoji" data-v="📎">📎</button>
-      <button class="cell" data-a="emoji" data-v="📝">📝</button>
-      <button class="cell" data-a="emoji" data-v="🌟">🌟</button>
-      <button class="cell" data-a="emoji" data-v="✨">✨</button>
-      <button class="cell" data-a="emoji" data-v="🚀">🚀</button>
-      <button class="cell" data-a="emoji" data-v="💰">💰</button>
-      <button class="cell" data-a="emoji" data-v="📅">📅</button>
-      <button class="cell" data-a="emoji" data-v="🔔">🔔</button>
-      <button class="cell" data-a="emoji" data-v="❗">❗</button>
-      <button class="cell" data-a="emoji" data-v="❓">❓</button>
-      <button class="cell" data-a="emoji" data-v="🏠">🏠</button>
-      <button class="cell" data-a="emoji" data-v="🛒">🛒</button>
-      <button class="cell" data-a="emoji" data-v="📞">📞</button>
-      <button class="cell" data-a="emoji" data-v="🎁">🎁</button>
-      <button class="cell" data-a="emoji" data-v="☕">☕</button>
-      <button class="cell" data-a="emoji" data-v="🌿">🌿</button>
+      <button class="btn c6" data-a="emoji" data-v="⭐">⭐</button>
+      <button class="btn c6" data-a="emoji" data-v="✅">✅</button>
+      <button class="btn c6" data-a="emoji" data-v="❤️">❤️</button>
+      <button class="btn c6" data-a="emoji" data-v="🔥">🔥</button>
+      <button class="btn c6" data-a="emoji" data-v="📌">📌</button>
+      <button class="btn c6" data-a="emoji" data-v="👉">👉</button>
+      <button class="btn c6" data-a="emoji" data-v="➡️">➡️</button>
+      <button class="btn c6" data-a="emoji" data-v="✔️">✔️</button>
+      <button class="btn c6" data-a="emoji" data-v="❌">❌</button>
+      <button class="btn c6" data-a="emoji" data-v="⚠️">⚠️</button>
+      <button class="btn c6" data-a="emoji" data-v="💡">💡</button>
+      <button class="btn c6" data-a="emoji" data-v="📍">📍</button>
+      <button class="btn c6" data-a="emoji" data-v="🔹">🔹</button>
+      <button class="btn c6" data-a="emoji" data-v="🔸">🔸</button>
+      <button class="btn c6" data-a="emoji" data-v="🟢">🟢</button>
+      <button class="btn c6" data-a="emoji" data-v="🔴">🔴</button>
+      <button class="btn c6" data-a="emoji" data-v="🟡">🟡</button>
+      <button class="btn c6" data-a="emoji" data-v="🔵">🔵</button>
+      <button class="btn c6" data-a="emoji" data-v="⚡">⚡</button>
+      <button class="btn c6" data-a="emoji" data-v="🎯">🎯</button>
+      <button class="btn c6" data-a="emoji" data-v="📎">📎</button>
+      <button class="btn c6" data-a="emoji" data-v="📝">📝</button>
+      <button class="btn c6" data-a="emoji" data-v="🌟">🌟</button>
+      <button class="btn c6" data-a="emoji" data-v="✨">✨</button>
+      <button class="btn c6" data-a="emoji" data-v="🚀">🚀</button>
+      <button class="btn c6" data-a="emoji" data-v="💰">💰</button>
+      <button class="btn c6" data-a="emoji" data-v="📅">📅</button>
+      <button class="btn c6" data-a="emoji" data-v="🔔">🔔</button>
+      <button class="btn c6" data-a="emoji" data-v="❗">❗</button>
+      <button class="btn c6" data-a="emoji" data-v="❓">❓</button>
+      <button class="btn c6" data-a="emoji" data-v="🏠">🏠</button>
+      <button class="btn c6" data-a="emoji" data-v="🛒">🛒</button>
+      <button class="btn c6" data-a="emoji" data-v="📞">📞</button>
+      <button class="btn c6" data-a="emoji" data-v="🎁">🎁</button>
+      <button class="btn c6" data-a="emoji" data-v="☕">☕</button>
+      <button class="btn c6" data-a="emoji" data-v="🌿">🌿</button>
     </div>
   </div>
 
   <div class="page" id="p-fc">
-    <button class="item back" data-go="main">‹ Цвет текста</button>
-    <div class="sep"></div>
-    <button class="item" data-a="fc" data-v="#000000"><span class="dot" style="background:#000000"></span>Чёрный</button>
-    <button class="item" data-a="fc" data-v="#ffffff"><span class="dot" style="background:#ffffff"></span>Белый</button>
-    <button class="item" data-a="fc" data-v="#d32f2f"><span class="dot" style="background:#d32f2f"></span>Красный</button>
-    <button class="item" data-a="fc" data-v="#f57c00"><span class="dot" style="background:#f57c00"></span>Оранжевый</button>
-    <button class="item" data-a="fc" data-v="#fbc02d"><span class="dot" style="background:#fbc02d"></span>Жёлтый</button>
-    <button class="item" data-a="fc" data-v="#388e3c"><span class="dot" style="background:#388e3c"></span>Зелёный</button>
-    <button class="item" data-a="fc" data-v="#00acc1"><span class="dot" style="background:#00acc1"></span>Голубой</button>
-    <button class="item" data-a="fc" data-v="#1976d2"><span class="dot" style="background:#1976d2"></span>Синий</button>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="row">
+      <button class="btn" data-a="fc" data-v="#000000" aria-label="Чёрный"><span class="dot" style="background:#000000"></span></button>
+      <button class="btn" data-a="fc" data-v="#ffffff" aria-label="Белый"><span class="dot" style="background:#ffffff"></span></button>
+      <button class="btn" data-a="fc" data-v="#d32f2f" aria-label="Красный"><span class="dot" style="background:#d32f2f"></span></button>
+      <button class="btn" data-a="fc" data-v="#f57c00" aria-label="Оранжевый"><span class="dot" style="background:#f57c00"></span></button>
+    </div>
+    <div class="row">
+      <button class="btn" data-a="fc" data-v="#fbc02d" aria-label="Жёлтый"><span class="dot" style="background:#fbc02d"></span></button>
+      <button class="btn" data-a="fc" data-v="#388e3c" aria-label="Зелёный"><span class="dot" style="background:#388e3c"></span></button>
+      <button class="btn" data-a="fc" data-v="#00acc1" aria-label="Голубой"><span class="dot" style="background:#00acc1"></span></button>
+      <button class="btn" data-a="fc" data-v="#1976d2" aria-label="Синий"><span class="dot" style="background:#1976d2"></span></button>
+    </div>
   </div>
 
   <div class="page" id="p-hc">
-    <button class="item back" data-go="main">‹ Цвет маркера</button>
-    <div class="sep"></div>
-    <button class="item" data-a="hc" data-v="#ef9a9a"><span class="dot sq" style="background:#ef9a9a"></span>Красный</button>
-    <button class="item" data-a="hc" data-v="#ffcc80"><span class="dot sq" style="background:#ffcc80"></span>Оранжевый</button>
-    <button class="item" data-a="hc" data-v="#fff176"><span class="dot sq" style="background:#fff176"></span>Жёлтый</button>
-    <button class="item" data-a="hc" data-v="#a5d6a7"><span class="dot sq" style="background:#a5d6a7"></span>Зелёный</button>
-    <button class="item" data-a="hc" data-v="#80deea"><span class="dot sq" style="background:#80deea"></span>Голубой</button>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="grid">
+      <button class="btn c3" data-a="hc" data-v="#ef9a9a" aria-label="Красный"><span class="dot sq" style="background:#ef9a9a"></span></button>
+      <button class="btn c3" data-a="hc" data-v="#ffcc80" aria-label="Оранжевый"><span class="dot sq" style="background:#ffcc80"></span></button>
+      <button class="btn c3" data-a="hc" data-v="#fff176" aria-label="Жёлтый"><span class="dot sq" style="background:#fff176"></span></button>
+      <button class="btn c3" data-a="hc" data-v="#a5d6a7" aria-label="Зелёный"><span class="dot sq" style="background:#a5d6a7"></span></button>
+      <button class="btn c3" data-a="hc" data-v="#80deea" aria-label="Голубой"><span class="dot sq" style="background:#80deea"></span></button>
+    </div>
   </div>
 </div>
 
@@ -191,14 +252,16 @@
   var current = Android.title();
   title.value = current;
 
-  var pages = ['main', 'head', 'ol', 'ul', 'emoji', 'fc', 'hc'];
+  var pages = ['main', 'ins', 'head', 'ol', 'ul', 'emoji', 'fc', 'hc'];
   var keep = { undo: 1, redo: 1, clear: 1, indent: 1, outdent: 1, bold: 1, italic: 1, underline: 1, strike: 1 };
+  var BLK = 'div,p,h1,h2,h3,h4,h5,h6,li,blockquote';
 
   function showPage(name) {
     for (var i = 0; i < pages.length; i++) {
       var p = document.getElementById('p-' + pages[i]);
       if (pages[i] === name) p.classList.add('show'); else p.classList.remove('show');
     }
+    if (name === 'emoji') bar.classList.add('wide'); else bar.classList.remove('wide');
     bar.scrollTop = 0;
   }
 
@@ -282,15 +345,143 @@
     }
   }
 
-  function clearFormat() {
-    document.execCommand('removeFormat');
-    var hs = ed.querySelectorAll('h1,h2,h3,h4,h5,h6');
+  function blockOf(n) {
+    var el = n ? (n.nodeType === 1 ? n : n.parentElement) : null;
+    var b = el ? el.closest(BLK) : null;
+    return (b && b !== ed && ed.contains(b)) ? b : null;
+  }
+
+  function touchOnly(el, r) {
+    if (r.collapsed) return false;
+    var e = r.endContainer;
+    if (!(e === el || el.contains(e))) return false;
+    if (r.endOffset !== 0) return false;
+    var pre = document.createRange();
+    pre.setStart(el, 0);
+    pre.setEnd(e, 0);
+    return pre.toString() === '';
+  }
+
+  function selBlocks() {
     var sel = window.getSelection();
-    var found = false;
-    for (var i = 0; i < hs.length; i++) {
-      if (sel.containsNode(hs[i], true)) found = true;
+    var out = [];
+    if (!sel.rangeCount) return out;
+    var r = sel.getRangeAt(0);
+    if (!ed.contains(r.commonAncestorContainer)) return out;
+    if (r.collapsed) {
+      var b = blockOf(r.startContainer);
+      if (b) out.push(b);
+      return out;
     }
-    if (found) document.execCommand('formatBlock', false, 'P');
+    var all = ed.querySelectorAll(BLK);
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.querySelector(BLK)) continue;
+      if (!r.intersectsNode(el)) continue;
+      if (touchOnly(el, r)) continue;
+      out.push(el);
+    }
+    return out;
+  }
+
+  function hasCheck(b) {
+    var c = b.querySelector('input[type=checkbox]');
+    if (!c) return false;
+    var pre = document.createRange();
+    pre.setStart(b, 0);
+    pre.setEndBefore(c);
+    return pre.toString().trim() === '';
+  }
+
+  function addCheck(b) {
+    var sel = window.getSelection();
+    var r = document.createRange();
+    r.setStart(b, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    document.execCommand('insertHTML', false, '<input type="checkbox">&nbsp;');
+  }
+
+  function removeCheck(b) {
+    var c = b.querySelector('input[type=checkbox]');
+    if (!c) return;
+    var sel = window.getSelection();
+    var r = document.createRange();
+    r.setStartBefore(c);
+    var n = c.nextSibling;
+    if (n && n.nodeType === 3 && /^[\u00a0 ]/.test(n.nodeValue)) r.setEnd(n, 1); else r.setEndAfter(c);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    document.execCommand('delete');
+    b.classList.remove('done');
+  }
+
+  function isChecked(c) {
+    return c.checked || c.hasAttribute('checked');
+  }
+
+  function syncChecks() {
+    var boxes = ed.querySelectorAll('input[type=checkbox]');
+    for (var i = 0; i < boxes.length; i++) {
+      var b = blockOf(boxes[i]);
+      if (!b) continue;
+      if (isChecked(boxes[i])) b.classList.add('done'); else b.classList.remove('done');
+    }
+    var done = ed.querySelectorAll('.done');
+    for (var j = 0; j < done.length; j++) {
+      var c = done[j].querySelector('input[type=checkbox]');
+      if (!c || !isChecked(c)) done[j].classList.remove('done');
+    }
+  }
+
+  function toggleCheck() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    var blocks = selBlocks();
+    if (!blocks.length) {
+      document.execCommand('formatBlock', false, 'div');
+      blocks = selBlocks();
+      if (!blocks.length) return;
+    }
+    var saved = sel.getRangeAt(0).cloneRange();
+    var all = true;
+    for (var i = 0; i < blocks.length; i++) {
+      if (!hasCheck(blocks[i])) all = false;
+    }
+    for (var k = 0; k < blocks.length; k++) {
+      if (all) removeCheck(blocks[k]);
+      else if (!hasCheck(blocks[k])) addCheck(blocks[k]);
+    }
+    sel.removeAllRanges();
+    sel.addRange(saved);
+    syncChecks();
+  }
+
+  function clearFormat() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    var saved = sel.getRangeAt(0).cloneRange();
+    var blocks = selBlocks();
+    for (var i = 0; i < blocks.length; i++) {
+      if (hasCheck(blocks[i])) removeCheck(blocks[i]);
+    }
+    sel.removeAllRanges();
+    sel.addRange(saved);
+    document.execCommand('removeFormat');
+    for (var n = 0; n < 4; n++) {
+      var any = false;
+      if (document.queryCommandState('insertUnorderedList')) { document.execCommand('insertUnorderedList'); any = true; }
+      if (document.queryCommandState('insertOrderedList')) { document.execCommand('insertOrderedList'); any = true; }
+      if (!any) break;
+    }
+    var after = selBlocks();
+    var heading = false;
+    for (var j = 0; j < after.length; j++) {
+      if (/^H[1-6]$/.test(after[j].tagName)) heading = true;
+    }
+    if (heading) document.execCommand('formatBlock', false, 'P');
+    syncChecks();
   }
 
   function run(a, v) {
@@ -308,9 +499,12 @@
       case 'ol': applyList('ol', v, null); break;
       case 'ul': applyList('ul', v, null); break;
       case 'emoji': applyList('ul', '', v); break;
-      case 'check': document.execCommand('insertHTML', false, '<div><input type="checkbox">&nbsp;</div>'); break;
+      case 'check': toggleCheck(); break;
       case 'fc': document.execCommand('foreColor', false, v); break;
       case 'hc': document.execCommand('hiliteColor', false, v); break;
+      case 'ins':
+        try { Android.insert(v); } catch (err) {}
+        break;
     }
   }
 
@@ -319,6 +513,7 @@
   if (saved) {
     ed.innerHTML = new DOMParser().parseFromString(saved, 'text/html').body.innerHTML;
   }
+  syncChecks();
 
   refit();
   window.addEventListener('resize', refit);
@@ -341,11 +536,12 @@
   });
 
   ed.addEventListener('pointerdown', closeMenu);
-  ed.addEventListener('input', later);
+  ed.addEventListener('input', function () { syncChecks(); later(); });
   ed.addEventListener('click', function (e) {
     if (e.target.type === 'checkbox') {
-      if (e.target.checked) e.target.setAttribute('checked', '');
-      else e.target.removeAttribute('checked');
+      var c = e.target;
+      if (c.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
+      syncChecks();
       later();
     }
   });
