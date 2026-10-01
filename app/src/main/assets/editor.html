@@ -33,7 +33,7 @@
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
-  #busy { display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 14px; z-index: 20; white-space: nowrap; }
+  #busy { display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 14px; z-index: 20; max-width: 90%; text-align: center; }
 
   .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; display: block; }
   #bar { display: none; position: fixed; right: 8px; top: 48px; box-sizing: border-box; width: 160px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 6px; }
@@ -257,10 +257,9 @@
   var timer = null;
   var hideTimer = null;
   var stickBottom = false;
-  var lastLen = 0;
+  var loaded = false;
+  var lastAtt = 0;
   var savedRange = null;
-  var attachQ = [];
-  var attachBusy = false;
   var current = Android.title();
   title.value = current;
 
@@ -274,8 +273,18 @@
     try { Android.hideSelectionToolbar(); } catch (e) {}
   }
 
+  function showBusy(t) {
+    busyEl.textContent = t;
+    busyEl.style.display = 'block';
+  }
+
+  function hideBusy() {
+    busyEl.style.display = 'none';
+  }
+
   function loadDoc() {
     var n = Android.loadStart();
+    if (n < 0) throw new Error('load failed');
     var parts = [];
     for (var i = 0; i < n; i++) parts.push(Android.loadChunk(i));
     Android.loadEnd();
@@ -377,50 +386,32 @@
     var css = document.getElementById('docstyle').outerHTML;
     return '<!DOCTYPE html><html><head><meta charset="utf-8">' + css + '</head><body>' + ed.innerHTML + '</body></html>';
   }
+
   function flush() {
     clearTimeout(timer);
+    if (!loaded) return;
     commitTitle();
-    var d = fullDoc();
-    lastLen = d.length;
-    saveDoc(d);
+    saveDoc(fullDoc());
+    try { lastAtt = Android.attSize(); } catch (e) {}
   }
+
   function later() {
+    if (!loaded) return;
     clearTimeout(timer);
-    timer = setTimeout(flush, lastLen > 3000000 ? 2500 : 500);
+    timer = setTimeout(flush, lastAtt > 5000000 ? 3000 : 500);
   }
 
-  function attachImage(id, mime, name) {
-    attachQ.push({ id: id, mime: mime, name: name });
-    if (!attachBusy) nextAttach();
+  function attachStart() {
+    showBusy('Добавляю изображение…');
   }
 
-  function nextAttach() {
-    var it = attachQ.shift();
-    if (!it) {
-      attachBusy = false;
-      busyEl.style.display = 'none';
-      return;
-    }
-    attachBusy = true;
-    busyEl.textContent = 'Добавляю изображение…' + (attachQ.length ? ' (ещё ' + attachQ.length + ')' : '');
-    busyEl.style.display = 'block';
-    setTimeout(function () {
-      var parts = [];
-      try {
-        for (;;) {
-          var c = Android.readChunk(it.id);
-          if (!c) break;
-          parts.push(c);
-        }
-      } catch (e) {
-        parts = [];
-      }
-      try { Android.release(it.id); } catch (e2) {}
-      if (parts.length) {
-        putImage('data:' + it.mime + ';base64,' + parts.join(''));
-      }
-      nextAttach();
-    }, 40);
+  function attachDone(url) {
+    putImage(url);
+  }
+
+  function attachFinish() {
+    hideBusy();
+    try { lastAtt = Android.attSize(); } catch (e) {}
   }
 
   function putImage(url) {
@@ -797,10 +788,16 @@
   }
 
   document.execCommand('styleWithCSS', false, true);
-  var saved = loadDoc();
-  if (saved) {
-    lastLen = saved.length;
-    ed.innerHTML = new DOMParser().parseFromString(saved, 'text/html').body.innerHTML;
+  try {
+    var savedDoc = loadDoc();
+    if (savedDoc) {
+      ed.innerHTML = new DOMParser().parseFromString(savedDoc, 'text/html').body.innerHTML;
+    }
+    loaded = true;
+    try { lastAtt = Android.attSize(); } catch (e0) {}
+  } catch (err0) {
+    ed.setAttribute('contenteditable', 'false');
+    showBusy('Не удалось открыть заметку. Данные не изменены.');
   }
   syncChecks();
 
