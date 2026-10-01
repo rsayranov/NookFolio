@@ -7,6 +7,7 @@
   h1 { font-size: 1.6em; margin: 0.4em 0; }
   h2 { font-size: 1em; font-weight: bold; margin: 0.4em 0; }
   p { margin: 0; }
+  pre { font-family: monospace; font-size: 0.95em; margin: 0; white-space: pre-wrap; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
   .done { text-decoration: line-through; color: #8a8a8a; }
   ol.n1 { list-style-type: decimal; }
@@ -42,8 +43,11 @@
   .row:last-child { margin-bottom: 0; }
   .btn { flex: 1; min-width: 0; height: 36px; border: 1px solid #ccc; border-radius: 8px; background: #f7f7f7; display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
   .btn:active { background: #e0e0e0; }
+  .btn.wide { flex: none; width: 100%; height: 44px; justify-content: flex-start; padding: 0 12px; margin-bottom: 5px; }
+  .btn.wide:last-child { margin-bottom: 0; }
   .back { display: flex; align-items: center; width: 100%; height: 28px; border: none; background: transparent; color: #1976d2; padding: 0 2px; margin-bottom: 4px; }
   .back .ic { width: 20px; height: 20px; }
+  .bt { font-size: 14px; font-weight: bold; margin-left: 2px; }
   .grid { display: flex; flex-wrap: wrap; gap: 5px; }
   .grid .btn { flex: none; }
   .c3 { width: calc((100% - 10px) / 3); }
@@ -79,9 +83,6 @@
   <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
-  <symbol id="i-h1" viewBox="0 0 24 24"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="m17 12 3-2v8"/></symbol>
-  <symbol id="i-h2" viewBox="0 0 24 24"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/></symbol>
-  <symbol id="i-para" viewBox="0 0 24 24"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/></symbol>
   <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></symbol>
 </svg>
 
@@ -138,12 +139,11 @@
   </div>
 
   <div class="page" id="p-head">
-    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg></button>
-    <div class="grid">
-      <button class="btn c3" data-a="h" data-v="H1" aria-label="Название"><svg class="ic"><use href="#i-h1"/></svg></button>
-      <button class="btn c3" data-a="h" data-v="H2" aria-label="Малый"><svg class="ic"><use href="#i-h2"/></svg></button>
-      <button class="btn c3" data-a="h" data-v="P" aria-label="Обычный текст"><svg class="ic"><use href="#i-para"/></svg></button>
-    </div>
+    <button class="back" data-go="main" aria-label="Назад"><svg class="ic"><use href="#i-back"/></svg><span class="bt">Заголовки</span></button>
+    <button class="btn wide" data-a="h" data-v="H1"><b style="font-size:21px">Название</b></button>
+    <button class="btn wide" data-a="h" data-v="H2"><b style="font-size:17px">Малый</b></button>
+    <button class="btn wide" data-a="h" data-v="P"><span style="font-size:16px">Обычный текст</span></button>
+    <button class="btn wide" data-a="h" data-v="PRE"><span style="font-family:monospace;font-size:15px">Примечание</span></button>
   </div>
 
   <div class="page" id="p-ol">
@@ -254,21 +254,40 @@
 
   var pages = ['main', 'ins', 'head', 'ol', 'ul', 'emoji', 'fc', 'hc'];
   var keep = { undo: 1, redo: 1, clear: 1, indent: 1, outdent: 1, bold: 1, italic: 1, underline: 1, strike: 1 };
-  var BLK = 'div,p,h1,h2,h3,h4,h5,h6,li,blockquote';
+  var BLK = 'div,p,h1,h2,h3,h4,h5,h6,li,blockquote,pre';
+  var curPage = 'main';
+  var curAnchor = null;
+
+  function placeBar(anchor) {
+    var minTop = topbar.offsetHeight + 2;
+    bar.style.maxHeight = Math.max(window.innerHeight - minTop - 10, 120) + 'px';
+    var top = (anchor === null) ? minTop : anchor;
+    if (top < minTop) top = minTop;
+    bar.style.top = top + 'px';
+    var h = bar.offsetHeight;
+    var maxTop = window.innerHeight - h - 8;
+    if (top > maxTop) top = maxTop;
+    if (top < minTop) top = minTop;
+    bar.style.top = top + 'px';
+  }
 
   function showPage(name) {
+    curPage = name;
     for (var i = 0; i < pages.length; i++) {
       var p = document.getElementById('p-' + pages[i]);
       if (pages[i] === name) p.classList.add('show'); else p.classList.remove('show');
     }
-    if (name === 'emoji') bar.classList.add('wide'); else bar.classList.remove('wide');
+    if (name === 'emoji' || name === 'head') bar.classList.add('wide'); else bar.classList.remove('wide');
     bar.scrollTop = 0;
+    if (bar.classList.contains('open')) placeBar(name === 'main' ? null : curAnchor);
   }
 
   function openMenu() {
+    curAnchor = null;
     showPage('main');
     bar.classList.add('open');
     fmt.classList.add('on');
+    placeBar(null);
   }
 
   function closeMenu() {
@@ -287,8 +306,9 @@
     var stick = stickBottom;
     var h = window.innerHeight - topbar.offsetHeight - title.offsetHeight;
     ed.style.height = Math.max(h, 150) + 'px';
-    bar.style.top = (topbar.offsetHeight + 2) + 'px';
-    bar.style.maxHeight = Math.max(window.innerHeight - topbar.offsetHeight - 12, 120) + 'px';
+    if (bar.classList.contains('open')) {
+      placeBar(curPage === 'main' ? null : curAnchor);
+    }
     if (stick) {
       ed.scrollTop = ed.scrollHeight;
     }
@@ -577,7 +597,7 @@
     var after = selBlocks();
     var heading = false;
     for (var j = 0; j < after.length; j++) {
-      if (/^H[1-6]$/.test(after[j].tagName)) heading = true;
+      if (/^(H[1-6]|PRE)$/.test(after[j].tagName)) heading = true;
     }
     if (heading) document.execCommand('formatBlock', false, 'P');
     syncChecks();
@@ -661,7 +681,16 @@
   bar.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.go) { showPage(b.dataset.go); return; }
+    if (b.dataset.go) {
+      var go = b.dataset.go;
+      if (go === 'main') {
+        curAnchor = null;
+      } else if (curPage === 'main') {
+        curAnchor = b.getBoundingClientRect().top - 38;
+      }
+      showPage(go);
+      return;
+    }
     var a = b.dataset.a;
     if (!a) return;
     ed.focus();
