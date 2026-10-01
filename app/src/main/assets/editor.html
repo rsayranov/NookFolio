@@ -8,6 +8,7 @@
   h2 { font-size: 1em; font-weight: bold; margin: 0.4em 0; }
   p { margin: 0; }
   pre { font-family: monospace; font-size: 0.95em; margin: 0; white-space: pre-wrap; }
+  img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 6px 0; }
   blockquote:not([style]) { margin: 0; padding: 4px 0 4px 16px; box-shadow: inset 4px 0 0 rgba(128,128,128,0.55); border-radius: 2px; color: #8a8a8a; line-height: 1.55; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
   .done { text-decoration: line-through; color: #8a8a8a; }
@@ -32,6 +33,7 @@
   #topbar button.on { background: #d0e4ff; border-color: #1976d2; }
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
+  #busy { display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 14px; z-index: 20; white-space: nowrap; }
 
   .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; display: block; }
   #bar { display: none; position: fixed; right: 8px; top: 48px; box-sizing: border-box; width: 160px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 6px; }
@@ -244,15 +246,21 @@
 
 <input id="title" type="text" placeholder="Заголовок" autocomplete="off">
 <div id="ed" contenteditable="true"></div>
+<div id="busy"></div>
 <script>
   var ed = document.getElementById('ed');
   var bar = document.getElementById('bar');
   var topbar = document.getElementById('topbar');
   var fmt = document.getElementById('fmt');
   var title = document.getElementById('title');
+  var busyEl = document.getElementById('busy');
   var timer = null;
   var hideTimer = null;
   var stickBottom = false;
+  var lastLen = 0;
+  var savedRange = null;
+  var attachQ = [];
+  var attachBusy = false;
   var current = Android.title();
   title.value = current;
 
@@ -264,6 +272,30 @@
 
   function hideSel() {
     try { Android.hideSelectionToolbar(); } catch (e) {}
+  }
+
+  function loadDoc() {
+    var n = Android.loadStart();
+    var parts = [];
+    for (var i = 0; i < n; i++) parts.push(Android.loadChunk(i));
+    Android.loadEnd();
+    return parts.join('');
+  }
+
+  function saveDoc(html) {
+    Android.saveBegin();
+    var i = 0;
+    var n = html.length;
+    while (i < n) {
+      var end = Math.min(i + 1000000, n);
+      if (end < n) {
+        var cc = html.charCodeAt(end - 1);
+        if (cc >= 0xD800 && cc <= 0xDBFF) end--;
+      }
+      Android.saveChunk(html.substring(i, end));
+      i = end;
+    }
+    Android.saveEnd();
   }
 
   function placeBar(anchor) {
@@ -345,8 +377,69 @@
     var css = document.getElementById('docstyle').outerHTML;
     return '<!DOCTYPE html><html><head><meta charset="utf-8">' + css + '</head><body>' + ed.innerHTML + '</body></html>';
   }
-  function flush() { clearTimeout(timer); commitTitle(); Android.save(fullDoc()); }
-  function later() { clearTimeout(timer); timer = setTimeout(flush, 500); }
+  function flush() {
+    clearTimeout(timer);
+    commitTitle();
+    var d = fullDoc();
+    lastLen = d.length;
+    saveDoc(d);
+  }
+  function later() {
+    clearTimeout(timer);
+    timer = setTimeout(flush, lastLen > 3000000 ? 2500 : 500);
+  }
+
+  function attachImage(id, mime, name) {
+    attachQ.push({ id: id, mime: mime, name: name });
+    if (!attachBusy) nextAttach();
+  }
+
+  function nextAttach() {
+    var it = attachQ.shift();
+    if (!it) {
+      attachBusy = false;
+      busyEl.style.display = 'none';
+      return;
+    }
+    attachBusy = true;
+    busyEl.textContent = 'Добавляю изображение…' + (attachQ.length ? ' (ещё ' + attachQ.length + ')' : '');
+    busyEl.style.display = 'block';
+    setTimeout(function () {
+      var parts = [];
+      try {
+        for (;;) {
+          var c = Android.readChunk(it.id);
+          if (!c) break;
+          parts.push(c);
+        }
+      } catch (e) {
+        parts = [];
+      }
+      try { Android.release(it.id); } catch (e2) {}
+      if (parts.length) {
+        putImage('data:' + it.mime + ';base64,' + parts.join(''));
+      }
+      nextAttach();
+    }, 40);
+  }
+
+  function putImage(url) {
+    ed.focus();
+    var s = window.getSelection();
+    if (savedRange && ed.contains(savedRange.commonAncestorContainer)) {
+      s.removeAllRanges();
+      s.addRange(savedRange);
+    } else {
+      var r = document.createRange();
+      r.selectNodeContents(ed);
+      r.collapse(false);
+      s.removeAllRanges();
+      s.addRange(r);
+    }
+    document.execCommand('insertImage', false, url);
+    if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
+    later();
+  }
 
   function listEl(tag) {
     var s = window.getSelection();
@@ -694,14 +787,19 @@
       case 'fc': document.execCommand('foreColor', false, v); break;
       case 'hc': document.execCommand('hiliteColor', false, v); break;
       case 'ins':
+        var s0 = window.getSelection();
+        if (s0.rangeCount && ed.contains(s0.getRangeAt(0).commonAncestorContainer)) {
+          savedRange = s0.getRangeAt(0).cloneRange();
+        }
         try { Android.insert(v); } catch (err) {}
         break;
     }
   }
 
   document.execCommand('styleWithCSS', false, true);
-  var saved = Android.load();
+  var saved = loadDoc();
   if (saved) {
+    lastLen = saved.length;
     ed.innerHTML = new DOMParser().parseFromString(saved, 'text/html').body.innerHTML;
   }
   syncChecks();
