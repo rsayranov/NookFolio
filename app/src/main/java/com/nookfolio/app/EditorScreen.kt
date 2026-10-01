@@ -1,8 +1,10 @@
 package com.nookfolio.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.ActionMode
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.compose.foundation.layout.*
@@ -14,10 +16,28 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import java.io.File
 
+class EditorWebView(context: Context) : WebView(context) {
+    private var floatingMode: ActionMode? = null
+
+    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
+        val mode = super.startActionMode(callback, type)
+        floatingMode = mode
+        return mode
+    }
+
+    fun hideSelectionToolbar() {
+        try {
+            floatingMode?.hide(2000L)
+        } catch (e: Exception) {
+        }
+    }
+}
+
 class EditorBridge(
     private var file: File,
     private val onMenu: () -> Unit,
-    private val onRenamed: (File) -> Unit
+    private val onRenamed: (File) -> Unit,
+    private val onHideToolbar: () -> Unit
 ) {
     @JavascriptInterface
     fun load(): String = if (file.exists()) file.readText() else ""
@@ -47,6 +67,11 @@ class EditorBridge(
     fun openMenu() {
         Handler(Looper.getMainLooper()).post { onMenu() }
     }
+
+    @JavascriptInterface
+    fun hideSelectionToolbar() {
+        Handler(Looper.getMainLooper()).post { onHideToolbar() }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -74,13 +99,16 @@ fun EditorScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                WebView(ctx).apply {
-                    settings.javaScriptEnabled = true
-                    addJavascriptInterface(EditorBridge(file, onMenu, onRenamed), "Android")
-                    loadUrl("file:///android_asset/editor.html")
-                    webRef = this
-                    onWeb(this)
-                }
+                val view = EditorWebView(ctx)
+                view.settings.javaScriptEnabled = true
+                view.addJavascriptInterface(
+                    EditorBridge(file, onMenu, onRenamed) { view.hideSelectionToolbar() },
+                    "Android"
+                )
+                view.loadUrl("file:///android_asset/editor.html")
+                webRef = view
+                onWeb(view)
+                view
             }
         )
     }
