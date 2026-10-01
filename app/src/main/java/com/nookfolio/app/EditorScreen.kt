@@ -2,6 +2,12 @@ package com.nookfolio.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +46,8 @@ import java.util.concurrent.atomic.AtomicInteger
 const val ATT_HOST = "https://nookfolio.local/att/"
 private const val CHUNK_CHARS = 1_000_000
 private const val MARKER = "src=\"data:"
+private const val MAX_SIDE = 2048
+private const val JPEG_QUALITY = 85
 
 fun extFor(mime: String): String = when (mime.lowercase()) {
     "image/jpeg", "image/jpg" -> "jpg"
@@ -185,6 +193,107 @@ private fun writeExpanded(html: String, w: Writer, attDir: File) {
         w.write("\"")
         pos = q + 1
     }
+}
+
+private fun readOrientation(context: Context, uri: Uri): Int {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { s ->
+            ExifInterface(s).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (e: Throwable) {
+        ExifInterface.ORIENTATION_NORMAL
+    }
+}
+
+private fun orientationMatrix(o: Int): Matrix {
+    val m = Matrix()
+    when (o) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> m.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+            m.setRotate(180f)
+            m.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            m.setRotate(90f)
+            m.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> m.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            m.setRotate(-90f)
+            m.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> m.setRotate(-90f)
+    }
+    return m
+}
+
+/** Уменьшает фото до MAX_SIDE по длинной стороне и сохраняет в JPEG. false, если не получилось. */
+private fun compressImage(context: Context, uri: Uri, dst: File): Boolean {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options()
+    bounds.inJustDecodeBounds = true
+    try {
+        resolver.openInputStream(uri)?.use { s -> BitmapFactory.decodeStream(s, null, bounds) }
+    } catch (e: Throwable) {
+        return false
+    }
+    val w0 = bounds.outWidth
+    val h0 = bounds.outHeight
+    if (w0 <= 0 || h0 <= 0) return false
+
+    var sample = 1
+    while (maxOf(w0, h0) / (sample * 2) >= MAX_SIDE) sample *= 2
+    val orientation = readOrientation(context, uri)
+
+    var attempt = 0
+    while (attempt < 2) {
+        var decoded: Bitmap? = null
+        var turned: Bitmap? = null
+        var flat: Bitmap? = null
+        try {
+            val opts = BitmapFactory.Options()
+            opts.inSampleSize = if (attempt == 0) sample else sample * 2
+            val d = resolver.openInputStream(uri)?.use { s -> BitmapFactory.decodeStream(s, null, opts) }
+                ?: return false
+            decoded = d
+
+            val m = orientationMatrix(orientation)
+            val longSide = maxOf(d.width, d.height)
+            if (longSide > MAX_SIDE) {
+                val sc = MAX_SIDE.toFloat() / longSide
+                m.postScale(sc, sc)
+            }
+            val t = if (m.isIdentity) d else Bitmap.createBitmap(d, 0, 0, d.width, d.height, m, true)
+            turned = t
+
+            var target = t
+            if (t.hasAlpha()) {
+                val f = Bitmap.createBitmap(t.width, t.height, Bitmap.Config.ARGB_8888)
+                flat = f
+                val cv = Canvas(f)
+                cv.drawColor(Color.WHITE)
+                cv.drawBitmap(t, 0f, 0f, null)
+                target = f
+            }
+            FileOutputStream(dst).use { o ->
+                target.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, o)
+            }
+            return true
+        } catch (e: OutOfMemoryError) {
+            attempt++
+        } catch (e: Throwable) {
+            return false
+        } finally {
+            flat?.recycle()
+            if (turned != null && turned !== decoded) turned.recycle()
+            decoded?.recycle()
+        }
+    }
+    return false
 }
 
 class EditorWebView(context: Context) : WebView(context) {
@@ -345,16 +454,27 @@ class EditorBridge(
         if (uris.isEmpty()) return
         view.evaluateJavascript("attachStart()", null)
         io.execute {
+            attDir.mkdirs()
             for (uri in uris) {
                 try {
                     val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-                    val name = "u" + counter.incrementAndGet() + "." + extFor(mime)
-                    attDir.mkdirs()
-                    val dst = File(attDir, name)
-                    context.contentResolver.openInputStream(uri)?.use { ins ->
-                        FileOutputStream(dst).use { o -> ins.copyTo(o, 1 shl 16) }
+                    val n = counter.incrementAndGet()
+                    var name = "u" + n + ".jpg"
+                    var dst = File(attDir, name)
+                    var ok = false
+                    if (mime != "image/gif") {
+                        ok = compressImage(context, uri, dst)
                     }
-                    if (dst.exists() && dst.length() > 0) {
+                    if (!ok) {
+                        dst.delete()
+                        name = "u" + n + "." + extFor(mime)
+                        dst = File(attDir, name)
+                        context.contentResolver.openInputStream(uri)?.use { ins ->
+                            FileOutputStream(dst).use { o -> ins.copyTo(o, 1 shl 16) }
+                        }
+                        ok = dst.exists() && dst.length() > 0
+                    }
+                    if (ok) {
                         val url = ATT_HOST + name
                         view.post { view.evaluateJavascript("attachDone(" + JSONObject.quote(url) + ")", null) }
                     }
