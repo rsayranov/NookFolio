@@ -384,6 +384,15 @@
     return out;
   }
 
+  function leafBlocks() {
+    var all = ed.querySelectorAll(BLK);
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+      if (!all[i].querySelector(BLK)) out.push(all[i]);
+    }
+    return out;
+  }
+
   function hasCheck(b) {
     var c = b.querySelector('input[type=checkbox]');
     if (!c) return false;
@@ -391,16 +400,6 @@
     pre.setStart(b, 0);
     pre.setEndBefore(c);
     return pre.toString().trim() === '';
-  }
-
-  function addCheck(b) {
-    var sel = window.getSelection();
-    var r = document.createRange();
-    r.setStart(b, 0);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
-    document.execCommand('insertHTML', false, '<input type="checkbox">&nbsp;');
   }
 
   function removeCheck(b) {
@@ -414,6 +413,25 @@
     sel.removeAllRanges();
     sel.addRange(r);
     document.execCommand('delete');
+    b.classList.remove('done');
+  }
+
+  function cloneAddCheck(b) {
+    var c = document.createElement('input');
+    c.type = 'checkbox';
+    b.insertBefore(document.createTextNode('\u00a0'), b.firstChild);
+    b.insertBefore(c, b.firstChild);
+  }
+
+  function cloneRemoveCheck(b) {
+    var c = b.querySelector('input[type=checkbox]');
+    if (!c) return;
+    var n = c.nextSibling;
+    if (n && n.nodeType === 3 && /^[\u00a0 ]/.test(n.nodeValue)) {
+      n.nodeValue = n.nodeValue.slice(1);
+      if (!n.nodeValue) n.parentNode.removeChild(n);
+    }
+    c.parentNode.removeChild(c);
     b.classList.remove('done');
   }
 
@@ -435,6 +453,36 @@
     }
   }
 
+  function unitOf(a, n) {
+    while (n.parentNode !== a) n = n.parentNode;
+    return n;
+  }
+
+  function pathFrom(root, node) {
+    var p = [];
+    while (node !== root) {
+      var par = node.parentNode;
+      p.unshift(Array.prototype.indexOf.call(par.childNodes, node));
+      node = par;
+    }
+    return p;
+  }
+
+  function nodeAt(root, path) {
+    var n = root;
+    for (var i = 0; i < path.length; i++) n = n.childNodes[path[i]];
+    return n;
+  }
+
+  function caretEnd(b) {
+    var r = document.createRange();
+    r.selectNodeContents(b);
+    var last = b.lastChild;
+    if (last && last.nodeType === 1 && last.tagName === 'BR') r.setEndBefore(last);
+    r.collapse(false);
+    return r;
+  }
+
   function toggleCheck() {
     var sel = window.getSelection();
     if (!sel.rangeCount) return;
@@ -444,18 +492,69 @@
       blocks = selBlocks();
       if (!blocks.length) return;
     }
-    var saved = sel.getRangeAt(0).cloneRange();
+    var collapsed = sel.getRangeAt(0).collapsed;
+    var leaves = leafBlocks();
+    var firstIdx = leaves.indexOf(blocks[0]);
+    var lastIdx = leaves.indexOf(blocks[blocks.length - 1]);
+
     var all = true;
     for (var i = 0; i < blocks.length; i++) {
       if (!hasCheck(blocks[i])) all = false;
     }
-    for (var k = 0; k < blocks.length; k++) {
-      if (all) removeCheck(blocks[k]);
-      else if (!hasCheck(blocks[k])) addCheck(blocks[k]);
+
+    var lastBlock = blocks[blocks.length - 1];
+    var a = blocks[0];
+    while (a && !a.contains(lastBlock)) a = a.parentNode;
+    if (a === blocks[0]) a = a.parentNode;
+    if (!a || !(a === ed || ed.contains(a))) a = ed;
+    while (a !== ed && a.closest && a.closest('ul,ol')) {
+      a = a.closest('ul,ol').parentNode;
     }
+    if (!(a === ed || ed.contains(a))) a = ed;
+
+    var u1 = unitOf(a, blocks[0]);
+    var uN = unitOf(a, lastBlock);
+    var units = [];
+    for (var u = u1; u; u = u.nextSibling) {
+      units.push(u);
+      if (u === uN) break;
+    }
+
+    var wrap = document.createElement('div');
+    for (var k = 0; k < units.length; k++) wrap.appendChild(units[k].cloneNode(true));
+
+    for (var m = 0; m < blocks.length; m++) {
+      var unit = unitOf(a, blocks[m]);
+      var ui = units.indexOf(unit);
+      if (ui < 0) continue;
+      var b2 = nodeAt(wrap.childNodes[ui], pathFrom(unit, blocks[m]));
+      if (!b2) continue;
+      if (all) cloneRemoveCheck(b2);
+      else if (!hasCheck(b2)) cloneAddCheck(b2);
+    }
+
+    var html = wrap.innerHTML;
+    var rg = document.createRange();
+    rg.setStartBefore(u1);
+    rg.setEndAfter(uN);
     sel.removeAllRanges();
-    sel.addRange(saved);
+    sel.addRange(rg);
+    document.execCommand('insertHTML', false, html);
     syncChecks();
+
+    var now = leafBlocks();
+    if (now.length === leaves.length && firstIdx >= 0 && lastIdx >= 0) {
+      var rr;
+      if (collapsed) {
+        rr = caretEnd(now[firstIdx]);
+      } else {
+        rr = document.createRange();
+        rr.setStart(now[firstIdx], 0);
+        rr.setEnd(now[lastIdx], now[lastIdx].childNodes.length);
+      }
+      sel.removeAllRanges();
+      sel.addRange(rr);
+    }
   }
 
   function clearFormat() {
