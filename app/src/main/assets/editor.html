@@ -251,6 +251,7 @@
   var fmt = document.getElementById('fmt');
   var title = document.getElementById('title');
   var timer = null;
+  var hideTimer = null;
   var stickBottom = false;
   var current = Android.title();
   title.value = current;
@@ -260,6 +261,10 @@
   var BLK = 'div,p,h1,h2,h3,h4,h5,h6,li,blockquote,pre';
   var curPage = 'main';
   var curAnchor = null;
+
+  function hideSel() {
+    try { Android.hideSelectionToolbar(); } catch (e) {}
+  }
 
   function placeBar(anchor) {
     var minTop = topbar.offsetHeight + 2;
@@ -291,11 +296,16 @@
     bar.classList.add('open');
     fmt.classList.add('on');
     placeBar(null);
+    hideSel();
+    clearInterval(hideTimer);
+    hideTimer = setInterval(hideSel, 1000);
   }
 
   function closeMenu() {
     bar.classList.remove('open');
     fmt.classList.remove('on');
+    clearInterval(hideTimer);
+    hideTimer = null;
   }
 
   function resetScroll() {
@@ -709,6 +719,10 @@
     stickBottom = (ed.scrollHeight - ed.scrollTop - ed.clientHeight) < 40;
   });
   ed.addEventListener('focus', function () { setTimeout(fit, 400); });
+
+  document.addEventListener('selectionchange', function () {
+    if (bar.classList.contains('open')) hideSel();
+  });
 
   title.addEventListener('blur', commitTitle);
   title.addEventListener('focus', closeMenu);
