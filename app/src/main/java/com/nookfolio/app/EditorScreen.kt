@@ -1,7 +1,9 @@
 package com.nookfolio.app
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -11,9 +13,11 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.util.Base64
 import android.view.ActionMode
 import android.webkit.JavascriptInterface
+import android.webkit.MimeTypeMap
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -24,11 +28,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.json.JSONObject
@@ -45,28 +53,59 @@ import java.util.concurrent.atomic.AtomicInteger
 
 const val ATT_HOST = "https://nookfolio.local/att/"
 private const val CHUNK_CHARS = 1_000_000
-private const val MARKER = "src=\"data:"
 private const val MAX_SIDE = 2048
 private const val JPEG_QUALITY = 85
+private const val LARGE_BYTES = 100L * 1024L * 1024L
 
-fun extFor(mime: String): String = when (mime.lowercase()) {
-    "image/jpeg", "image/jpg" -> "jpg"
-    "image/png" -> "png"
-    "image/webp" -> "webp"
-    "image/gif" -> "gif"
-    "image/heic" -> "heic"
-    "image/heif" -> "heif"
-    else -> "bin"
+fun extFor(mime: String): String {
+    val m = mime.lowercase()
+    return when (m) {
+        "image/jpeg", "image/jpg" -> "jpg"
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        "image/heic" -> "heic"
+        "image/heif" -> "heif"
+        else -> MimeTypeMap.getSingleton().getExtensionFromMimeType(m) ?: "bin"
+    }
 }
 
-fun mimeFor(name: String): String = when (name.substringAfterLast('.').lowercase()) {
-    "jpg", "jpeg" -> "image/jpeg"
-    "png" -> "image/png"
-    "webp" -> "image/webp"
-    "gif" -> "image/gif"
-    "heic" -> "image/heic"
-    "heif" -> "image/heif"
-    else -> "application/octet-stream"
+fun mimeFor(name: String): String {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return when (ext) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "heic" -> "image/heic"
+        "heif" -> "image/heif"
+        else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+    }
+}
+
+private fun safeExt(name: String, mime: String): String {
+    val e = name.substringAfterLast('.', "").lowercase().filter { it.isLetterOrDigit() }.take(8)
+    return if (e.isNotEmpty()) e else extFor(mime)
+}
+
+private fun queryName(context: Context, uri: Uri): String {
+    try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) return c.getString(0) ?: ""
+        }
+    } catch (e: Throwable) {
+    }
+    return ""
+}
+
+private fun querySize(context: Context, uri: Uri): Long {
+    try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) return c.getLong(0)
+        }
+    } catch (e: Throwable) {
+    }
+    return 0L
 }
 
 private fun chunkBounds(s: String): List<IntArray> {
@@ -81,6 +120,21 @@ private fun chunkBounds(s: String): List<IntArray> {
     return list
 }
 
+private fun sbEndsWith(sb: StringBuilder, s: String): Boolean {
+    val off = sb.length - s.length
+    if (off < 0) return false
+    for (i in s.indices) {
+        if (sb[off + i] != s[i]) return false
+    }
+    return true
+}
+
+private fun dataMarkerAttr(sb: StringBuilder): String? {
+    if (sbEndsWith(sb, "src=\"data:")) return "src"
+    if (sbEndsWith(sb, "href=\"data:")) return "href"
+    return null
+}
+
 /** Читает файл заметки потоком: вложения (data:...) уходят в файлы, в тексте остаются ссылки. */
 private fun expandNote(src: File, attDir: File): String {
     val out = StringBuilder()
@@ -88,6 +142,7 @@ private fun expandNote(src: File, attDir: File): String {
     val pend = StringBuilder()
     var os: OutputStream? = null
     var name = ""
+    var attr = "src"
     var count = 0
     var state = 0
     src.bufferedReader(Charsets.UTF_8, 1 shl 16).use { reader ->
@@ -99,12 +154,14 @@ private fun expandNote(src: File, attDir: File): String {
                 val c = buf[i]
                 if (state == 0) {
                     out.append(c)
-                    if (c == ':' && out.length >= MARKER.length &&
-                        out.substring(out.length - MARKER.length) == MARKER
-                    ) {
-                        out.setLength(out.length - MARKER.length)
-                        header.setLength(0)
-                        state = 1
+                    if (c == ':') {
+                        val a = dataMarkerAttr(out)
+                        if (a != null) {
+                            out.setLength(out.length - (a.length + 7))
+                            attr = a
+                            header.setLength(0)
+                            state = 1
+                        }
                     }
                 } else if (state == 1) {
                     if (c == ',') {
@@ -117,11 +174,14 @@ private fun expandNote(src: File, attDir: File): String {
                             pend.setLength(0)
                             state = 2
                         } else {
-                            out.append(MARKER).append(h).append(',')
+                            out.append(attr).append("=\"data:").append(h).append(',')
                             state = 0
                         }
                     } else if (c == '"') {
-                        out.append(MARKER).append(header).append('"')
+                        out.append(attr).append("=\"data:").append(header).append('"')
+                        state = 0
+                    } else if (header.length > 200) {
+                        out.append(attr).append("=\"data:").append(header).append(c)
                         state = 0
                     } else {
                         header.append(c)
@@ -132,7 +192,7 @@ private fun expandNote(src: File, attDir: File): String {
                         if (rest.isNotEmpty()) os?.write(Base64.decode(rest, Base64.DEFAULT))
                         os?.close()
                         os = null
-                        out.append("src=\"").append(ATT_HOST).append(name).append('"')
+                        out.append(attr).append("=\"").append(ATT_HOST).append(name).append('"')
                         state = 0
                     } else if (c != '\n' && c != '\r' && c != ' ') {
                         pend.append(c)
@@ -152,11 +212,24 @@ private fun expandNote(src: File, attDir: File): String {
 
 /** Пишет заметку: ссылки на вложения снова превращаются в data:-вставки, поток по 3 МБ. */
 private fun writeExpanded(html: String, w: Writer, attDir: File) {
-    val prefix = "src=\"" + ATT_HOST
+    val srcP = "src=\"" + ATT_HOST
+    val hrefP = "href=\"" + ATT_HOST
     var pos = 0
     while (true) {
-        val i = html.indexOf(prefix, pos)
-        if (i < 0) {
+        val i1 = html.indexOf(srcP, pos)
+        val i2 = html.indexOf(hrefP, pos)
+        val i: Int
+        val prefix: String
+        val attr: String
+        if (i1 >= 0 && (i2 < 0 || i1 < i2)) {
+            i = i1
+            prefix = srcP
+            attr = "src"
+        } else if (i2 >= 0) {
+            i = i2
+            prefix = hrefP
+            attr = "href"
+        } else {
             w.write(html, pos, html.length - pos)
             return
         }
@@ -175,7 +248,7 @@ private fun writeExpanded(html: String, w: Writer, attDir: File) {
             pos = q + 1
             continue
         }
-        w.write("src=\"data:" + mimeFor(name) + ";base64,")
+        w.write(attr + "=\"data:" + mimeFor(name) + ";base64,")
         FileInputStream(f).buffered(1 shl 16).use { ins ->
             val b = ByteArray(3 * 1024 * 1024)
             while (true) {
@@ -450,9 +523,41 @@ class EditorBridge(
         main.post { onInsert(kind) }
     }
 
+    @JavascriptInterface
+    fun openAtt(url: String, name: String, mime: String) {
+        val fileName = url.removePrefix(ATT_HOST).substringBefore('?')
+        if (fileName.isEmpty() || fileName.contains('/') || fileName.contains("..")) return
+        val src = File(attDir, fileName)
+        if (!src.exists()) return
+        io.execute {
+            try {
+                val dir = File(context.cacheDir, "open")
+                dir.deleteRecursively()
+                dir.mkdirs()
+                val shown = (if (name.isBlank()) fileName else name).replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val copy = File(dir, shown)
+                src.copyTo(copy, overwrite = true)
+                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", copy)
+                val type = if (mime.isNotBlank()) mime else mimeFor(shown)
+                val intent = Intent(Intent.ACTION_VIEW)
+                intent.setDataAndType(uri, type)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                main.post {
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: ActivityNotFoundException) {
+                        Toast.makeText(context, "Нет приложения для открытия этого файла", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Throwable) {
+                main.post { Toast.makeText(context, "Не удалось открыть файл", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
     fun attachImages(uris: List<Uri>, view: WebView) {
         if (uris.isEmpty()) return
-        view.evaluateJavascript("attachStart()", null)
+        view.evaluateJavascript("attachStart('Добавляю изображение…')", null)
         io.execute {
             attDir.mkdirs()
             for (uri in uris) {
@@ -485,6 +590,40 @@ class EditorBridge(
             view.post { view.evaluateJavascript("attachFinish()", null) }
         }
     }
+
+    fun attachFiles(uris: List<Uri>, view: WebView) {
+        if (uris.isEmpty()) return
+        view.evaluateJavascript("attachStart('Добавляю файл…')", null)
+        io.execute {
+            attDir.mkdirs()
+            for (uri in uris) {
+                try {
+                    val shown = queryName(context, uri).ifEmpty { "file" }
+                    var mime = context.contentResolver.getType(uri) ?: ""
+                    if (mime.isBlank() || mime == "application/octet-stream") {
+                        mime = mimeFor(shown)
+                    }
+                    val n = counter.incrementAndGet()
+                    val name = "f" + n + "." + safeExt(shown, mime)
+                    val dst = File(attDir, name)
+                    context.contentResolver.openInputStream(uri)?.use { ins ->
+                        FileOutputStream(dst).use { o -> ins.copyTo(o, 1 shl 16) }
+                    }
+                    if (dst.exists() && dst.length() > 0) {
+                        val url = ATT_HOST + name
+                        val js = "attachFileDone(" + JSONObject.quote(url) + "," + JSONObject.quote(shown) + "," +
+                            dst.length() + "," + JSONObject.quote(mime) + ")"
+                        view.post { view.evaluateJavascript(js, null) }
+                    } else {
+                        dst.delete()
+                    }
+                } catch (e: Throwable) {
+                    main.post { Toast.makeText(context, "Не удалось добавить файл", Toast.LENGTH_LONG).show() }
+                }
+            }
+            view.post { view.evaluateJavascript("attachFinish()", null) }
+        }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -499,8 +638,10 @@ fun EditorScreen(
     val context = LocalContext.current
     var webRef: WebView? by remember { mutableStateOf(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var pending by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var pendingMb by remember { mutableIntStateOf(0) }
     val holder = remember { arrayOfNulls<EditorBridge>(1) }
-    val attDir = remember { File(context.cacheDir, "att") }
+    val attDir = remember { File(context.filesDir, "att_work") }
 
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
@@ -509,6 +650,26 @@ fun EditorScreen(
         val w = webRef
         if (br != null && w != null && picked.isNotEmpty()) {
             br.attachImages(picked, w)
+        }
+    }
+
+    val pickFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { picked ->
+        val br = holder[0]
+        val w = webRef
+        if (br != null && w != null && picked.isNotEmpty()) {
+            var biggest = 0L
+            for (u in picked) {
+                val s = querySize(context, u)
+                if (s > biggest) biggest = s
+            }
+            if (biggest >= LARGE_BYTES) {
+                pendingMb = (biggest / (1024L * 1024L)).toInt()
+                pending = picked
+            } else {
+                br.attachFiles(picked, w)
+            }
         }
     }
 
@@ -547,6 +708,8 @@ fun EditorScreen(
                                 pickImages.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
+                            } else if (kind == "file") {
+                                pickFiles.launch(arrayOf("*/*"))
                             } else {
                                 Toast.makeText(
                                     ctx,
@@ -565,5 +728,28 @@ fun EditorScreen(
                 }
             )
         }
+    }
+
+    if (pending.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { pending = emptyList() },
+            title = { Text("Большой файл") },
+            text = {
+                Text(
+                    "Размер файла около " + pendingMb +
+                        " МБ. Заметка станет очень тяжёлой и будет медленно открываться и сохраняться. Добавить?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val list = pending
+                    pending = emptyList()
+                    val br = holder[0]
+                    val w = webRef
+                    if (br != null && w != null) br.attachFiles(list, w)
+                }) { Text("Добавить") }
+            },
+            dismissButton = { TextButton(onClick = { pending = emptyList() }) { Text("Отмена") } }
+        )
     }
 }
