@@ -1,16 +1,20 @@
 package com.nookfolio.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.media.ExifInterface
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
@@ -32,10 +36,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -45,6 +51,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.Writer
@@ -66,6 +73,7 @@ fun extFor(mime: String): String {
         "image/gif" -> "gif"
         "image/heic" -> "heic"
         "image/heif" -> "heif"
+        "audio/mp4", "audio/m4a", "audio/x-m4a" -> "m4a"
         else -> MimeTypeMap.getSingleton().getExtensionFromMimeType(m) ?: "bin"
     }
 }
@@ -79,6 +87,7 @@ fun mimeFor(name: String): String {
         "gif" -> "image/gif"
         "heic" -> "image/heic"
         "heif" -> "image/heif"
+        "m4a" -> "audio/mp4"
         else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
     }
 }
@@ -369,6 +378,31 @@ private fun compressImage(context: Context, uri: Uri, dst: File): Boolean {
     return false
 }
 
+@Suppress("DEPRECATION")
+private fun newRecorder(context: Context): MediaRecorder {
+    return if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
+}
+
+class LimitedInputStream(private val src: InputStream, private var left: Long) : InputStream() {
+    override fun read(): Int {
+        if (left <= 0) return -1
+        val r = src.read()
+        if (r >= 0) left--
+        return r
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (left <= 0) return -1
+        val n = src.read(b, off, minOf(len.toLong(), left).toInt())
+        if (n > 0) left -= n.toLong()
+        return n
+    }
+
+    override fun close() {
+        src.close()
+    }
+}
+
 class EditorWebView(context: Context) : WebView(context) {
     private var floatingMode: ActionMode? = null
 
@@ -391,7 +425,9 @@ class AttClient(private val attDir: File, private val onGone: () -> Unit) : WebV
         val url = request.url.toString()
         if (!url.startsWith(ATT_HOST)) return null
         val name = url.removePrefix(ATT_HOST).substringBefore('?').substringBefore('#')
-        val headers = mapOf("Access-Control-Allow-Origin" to "*")
+        val headers = HashMap<String, String>()
+        headers["Access-Control-Allow-Origin"] = "*"
+        headers["Accept-Ranges"] = "bytes"
         if (name.isEmpty() || name.contains('/') || name.contains("..")) {
             return WebResourceResponse("text/plain", "utf-8", 400, "Bad Request", headers, ByteArrayInputStream(ByteArray(0)))
         }
@@ -399,7 +435,39 @@ class AttClient(private val attDir: File, private val onGone: () -> Unit) : WebV
         if (!f.exists()) {
             return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", headers, ByteArrayInputStream(ByteArray(0)))
         }
-        return WebResourceResponse(mimeFor(name), null, 200, "OK", headers, FileInputStream(f))
+        val len = f.length()
+        val mime = mimeFor(name)
+        val rangeHeader = request.requestHeaders["Range"] ?: request.requestHeaders["range"]
+        if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+            val spec = rangeHeader.removePrefix("bytes=").substringBefore(',').trim()
+            val dash = spec.indexOf('-')
+            if (dash >= 0) {
+                val a = spec.substring(0, dash).toLongOrNull()
+                val b = spec.substring(dash + 1).toLongOrNull()
+                val start: Long
+                val end: Long
+                if (a == null) {
+                    val n = b ?: 0L
+                    start = maxOf(0L, len - n)
+                    end = len - 1
+                } else {
+                    start = a
+                    end = if (b == null || b >= len) len - 1 else b
+                }
+                if (len == 0L || start >= len || start > end) {
+                    headers["Content-Range"] = "bytes */$len"
+                    return WebResourceResponse("text/plain", "utf-8", 416, "Range Not Satisfiable", headers, ByteArrayInputStream(ByteArray(0)))
+                }
+                val fis = FileInputStream(f)
+                fis.channel.position(start)
+                val size = end - start + 1
+                headers["Content-Range"] = "bytes $start-$end/$len"
+                headers["Content-Length"] = size.toString()
+                return WebResourceResponse(mime, null, 206, "Partial Content", headers, LimitedInputStream(fis, size))
+            }
+        }
+        headers["Content-Length"] = len.toString()
+        return WebResourceResponse(mime, null, 200, "OK", headers, FileInputStream(f))
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -424,6 +492,10 @@ class EditorBridge(
     private var bounds: List<IntArray> = emptyList()
     private val saveBuf = StringBuilder()
     private var backedUp = false
+    private var recorder: MediaRecorder? = null
+    private var recFile: File? = null
+
+    var web: WebView? = null
 
     @JavascriptInterface
     fun loadStart(): Int {
@@ -524,6 +596,16 @@ class EditorBridge(
     }
 
     @JavascriptInterface
+    fun voiceStop() {
+        io.execute { finishRecording(true, false) }
+    }
+
+    @JavascriptInterface
+    fun voiceCancel() {
+        io.execute { finishRecording(false, false) }
+    }
+
+    @JavascriptInterface
     fun openAtt(url: String, name: String, mime: String) {
         val fileName = url.removePrefix(ATT_HOST).substringBefore('?')
         if (fileName.isEmpty() || fileName.contains('/') || fileName.contains("..")) return
@@ -555,7 +637,83 @@ class EditorBridge(
         }
     }
 
-    fun attachImages(uris: List<Uri>, view: WebView) {
+    fun isRecording(): Boolean = recorder != null
+
+    @Synchronized
+    fun startRecording(): Boolean {
+        if (recorder != null) return true
+        var r: MediaRecorder? = null
+        var f: File? = null
+        return try {
+            attDir.mkdirs()
+            f = File(attDir, "v" + counter.incrementAndGet() + ".m4a")
+            r = newRecorder(context)
+            r.setAudioSource(MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(64000)
+            r.setAudioSamplingRate(44100)
+            r.setAudioChannels(1)
+            r.setOutputFile(f.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            recFile = f
+            true
+        } catch (e: Throwable) {
+            try {
+                r?.release()
+            } catch (e2: Throwable) {
+            }
+            f?.delete()
+            false
+        }
+    }
+
+    fun stopForPause() {
+        finishRecording(true, true)
+    }
+
+    fun cancelRecording() {
+        finishRecording(false, false)
+    }
+
+    @Synchronized
+    private fun finishRecording(save: Boolean, flushAfter: Boolean) {
+        val r = recorder ?: return
+        recorder = null
+        val f = recFile
+        recFile = null
+        var ok = true
+        try {
+            r.stop()
+        } catch (e: Throwable) {
+            ok = false
+        }
+        try {
+            r.release()
+        } catch (e: Throwable) {
+        }
+        if (f == null) return
+        val view = web
+        if (!save || !ok || f.length() < 1000) {
+            f.delete()
+            if (save) {
+                main.post { Toast.makeText(context, "Запись слишком короткая", Toast.LENGTH_SHORT).show() }
+            }
+            view?.post { view.evaluateJavascript("voiceEnded()", null) }
+            return
+        }
+        val url = ATT_HOST + f.name
+        val size = f.length()
+        view?.post {
+            view.evaluateJavascript("voiceEnded()", null)
+            view.evaluateJavascript("attachAudioDone(" + JSONObject.quote(url) + "," + size + ")", null)
+            if (flushAfter) view.evaluateJavascript("flush()", null)
+        }
+    }
+
+    fun attachImages(uris: List<Uri>, view: WebView, cleanup: File? = null) {
         if (uris.isEmpty()) return
         view.evaluateJavascript("attachStart('Добавляю изображение…')", null)
         io.execute {
@@ -587,6 +745,7 @@ class EditorBridge(
                     main.post { Toast.makeText(context, "Не удалось добавить изображение", Toast.LENGTH_LONG).show() }
                 }
             }
+            cleanup?.delete()
             view.post { view.evaluateJavascript("attachFinish()", null) }
         }
     }
@@ -640,8 +799,21 @@ fun EditorScreen(
     var reload by remember { mutableIntStateOf(0) }
     var pending by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pendingMb by remember { mutableIntStateOf(0) }
+    var camPath by rememberSaveable { mutableStateOf("") }
     val holder = remember { arrayOfNulls<EditorBridge>(1) }
     val attDir = remember { File(context.filesDir, "att_work") }
+
+    fun startVoice() {
+        val br = holder[0]
+        val w = webRef
+        if (br == null || w == null) return
+        if (br.isRecording()) return
+        if (br.startRecording()) {
+            w.evaluateJavascript("voiceStarted()", null)
+        } else {
+            Toast.makeText(context, "Не удалось начать запись", Toast.LENGTH_LONG).show()
+        }
+    }
 
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
@@ -650,6 +822,22 @@ fun EditorScreen(
         val w = webRef
         if (br != null && w != null && picked.isNotEmpty()) {
             br.attachImages(picked, w)
+        }
+    }
+
+    val takePhoto = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { done ->
+        if (camPath.isNotEmpty()) {
+            val f = File(camPath)
+            val br = holder[0]
+            val w = webRef
+            if (done && br != null && w != null && f.exists() && f.length() > 0) {
+                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", f)
+                br.attachImages(listOf(uri), w, f)
+            } else {
+                f.delete()
+            }
         }
     }
 
@@ -673,14 +861,30 @@ fun EditorScreen(
         }
     }
 
+    val micPerm = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startVoice()
+        } else {
+            Toast.makeText(context, "Для записи нужен доступ к микрофону", Toast.LENGTH_LONG).show()
+        }
+    }
+
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 webRef?.evaluateJavascript("refit()", null)
             }
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                holder[0]?.stopForPause()
+            }
         }
         owner.lifecycle.addObserver(observer)
-        onDispose { owner.lifecycle.removeObserver(observer) }
+        onDispose {
+            owner.lifecycle.removeObserver(observer)
+            holder[0]?.cancelRecording()
+        }
     }
 
     key(reload) {
@@ -692,6 +896,7 @@ fun EditorScreen(
                     view.settings.javaScriptEnabled = true
                     view.webViewClient = AttClient(attDir) {
                         Handler(Looper.getMainLooper()).post {
+                            holder[0]?.cancelRecording()
                             Toast.makeText(ctx, "Редактор перезапущен", Toast.LENGTH_LONG).show()
                             reload++
                         }
@@ -710,6 +915,25 @@ fun EditorScreen(
                                 )
                             } else if (kind == "file") {
                                 pickFiles.launch(arrayOf("*/*"))
+                            } else if (kind == "camera") {
+                                try {
+                                    val dir = File(ctx.cacheDir, "camera")
+                                    dir.mkdirs()
+                                    val f = File(dir, "cam_" + System.currentTimeMillis() + ".jpg")
+                                    camPath = f.path
+                                    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
+                                    takePhoto.launch(uri)
+                                } catch (e: Throwable) {
+                                    Toast.makeText(ctx, "Не удалось открыть камеру", Toast.LENGTH_LONG).show()
+                                }
+                            } else if (kind == "voice") {
+                                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                                    PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    startVoice()
+                                } else {
+                                    micPerm.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                             } else {
                                 Toast.makeText(
                                     ctx,
@@ -719,6 +943,7 @@ fun EditorScreen(
                             }
                         }
                     )
+                    bridge.web = view
                     holder[0] = bridge
                     view.addJavascriptInterface(bridge, "Android")
                     view.loadUrl("file:///android_asset/editor.html")
