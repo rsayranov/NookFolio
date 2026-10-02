@@ -11,6 +11,7 @@
   img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 6px 0; }
   a { color: inherit; }
   .att { margin: 6px 0; }
+  .att audio { width: 100%; display: block; }
   .attc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(128,128,128,0.45); border-radius: 10px; text-decoration: none; color: inherit; }
   .attn { flex: 1; min-width: 0; font-weight: 500; word-break: break-all; }
   .atts { color: #8a8a8a; font-size: 0.85em; white-space: nowrap; }
@@ -39,6 +40,11 @@
   #title { display: block; box-sizing: border-box; width: 100%; border: none; border-bottom: 1px solid #ddd; outline: none; font-size: 22px; font-weight: bold; padding: 10px 12px; font-family: sans-serif; }
   #ed { box-sizing: border-box; height: 300px; overflow-y: auto; padding: 12px 12px 60px 12px; outline: none; }
   #busy { display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(0,0,0,0.78); color: #fff; padding: 8px 16px; border-radius: 16px; font-size: 14px; z-index: 20; max-width: 90%; text-align: center; }
+  #rec { display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); align-items: center; gap: 12px; background: rgba(0,0,0,0.88); color: #fff; padding: 8px 12px; border-radius: 22px; font-size: 15px; z-index: 30; }
+  #rec button { border: none; border-radius: 14px; padding: 7px 14px; font-size: 14px; color: #fff; font-family: sans-serif; }
+  #recstop { background: #d32f2f; }
+  #reccancel { background: #555; }
+  .recdot { width: 10px; height: 10px; border-radius: 50%; background: #ff5252; }
 
   .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; display: block; }
   #bar { display: none; position: fixed; right: 8px; top: 48px; box-sizing: border-box; width: 160px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 6px; }
@@ -252,6 +258,7 @@
 <input id="title" type="text" placeholder="Заголовок" autocomplete="off">
 <div id="ed" contenteditable="true"></div>
 <div id="busy"></div>
+<div id="rec"><span class="recdot"></span><span id="rect">0:00</span><button id="recstop">Стоп</button><button id="reccancel">Отмена</button></div>
 <script>
   var ed = document.getElementById('ed');
   var bar = document.getElementById('bar');
@@ -259,8 +266,12 @@
   var fmt = document.getElementById('fmt');
   var title = document.getElementById('title');
   var busyEl = document.getElementById('busy');
+  var recEl = document.getElementById('rec');
+  var recTime = document.getElementById('rect');
   var timer = null;
   var hideTimer = null;
+  var recTimer = null;
+  var recT0 = 0;
   var stickBottom = false;
   var loaded = false;
   var lastAtt = 0;
@@ -285,6 +296,25 @@
 
   function hideBusy() {
     busyEl.style.display = 'none';
+  }
+
+  function tickRec() {
+    var s = Math.floor((Date.now() - recT0) / 1000);
+    recTime.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function voiceStarted() {
+    recT0 = Date.now();
+    tickRec();
+    recEl.style.display = 'flex';
+    clearInterval(recTimer);
+    recTimer = setInterval(tickRec, 500);
+  }
+
+  function voiceEnded() {
+    clearInterval(recTimer);
+    recTimer = null;
+    recEl.style.display = 'none';
   }
 
   function loadDoc() {
@@ -425,6 +455,10 @@
     putCard(url, name, size, mime);
   }
 
+  function attachAudioDone(url, size) {
+    putAudio(url);
+  }
+
   function attachFinish() {
     hideBusy();
     try { lastAtt = Android.attSize(); } catch (e) {}
@@ -449,6 +483,23 @@
   function putImage(url) {
     var s = restoreCaret();
     document.execCommand('insertImage', false, url);
+    if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
+    later();
+  }
+
+  function putAudio(url) {
+    var s = restoreCaret();
+    var box = document.createElement('div');
+    box.className = 'att';
+    box.setAttribute('contenteditable', 'false');
+    var au = document.createElement('audio');
+    au.setAttribute('controls', '');
+    au.setAttribute('preload', 'metadata');
+    au.setAttribute('src', url);
+    box.appendChild(au);
+    var wrap = document.createElement('div');
+    wrap.appendChild(box);
+    document.execCommand('insertHTML', false, wrap.innerHTML + '<div><br></div>');
     if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
     later();
   }
@@ -867,6 +918,15 @@
 
   document.addEventListener('selectionchange', function () {
     if (bar.classList.contains('open')) hideSel();
+  });
+
+  document.getElementById('recstop').addEventListener('click', function () {
+    voiceEnded();
+    try { Android.voiceStop(); } catch (e) {}
+  });
+  document.getElementById('reccancel').addEventListener('click', function () {
+    voiceEnded();
+    try { Android.voiceCancel(); } catch (e) {}
   });
 
   title.addEventListener('blur', commitTitle);
