@@ -9,6 +9,11 @@
   p { margin: 0; }
   pre { font-family: monospace; font-size: 0.95em; margin: 0; white-space: pre-wrap; }
   img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 6px 0; }
+  a { color: inherit; }
+  .att { margin: 6px 0; }
+  .attc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(128,128,128,0.45); border-radius: 10px; text-decoration: none; color: inherit; }
+  .attn { flex: 1; min-width: 0; font-weight: 500; word-break: break-all; }
+  .atts { color: #8a8a8a; font-size: 0.85em; white-space: nowrap; }
   blockquote:not([style]) { margin: 0; padding: 4px 0 4px 16px; box-shadow: inset 4px 0 0 rgba(128,128,128,0.55); border-radius: 2px; color: #8a8a8a; line-height: 1.55; }
   input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; }
   .done { text-decoration: line-through; color: #8a8a8a; }
@@ -401,12 +406,23 @@
     timer = setTimeout(flush, lastAtt > 5000000 ? 3000 : 500);
   }
 
-  function attachStart() {
-    showBusy('Добавляю изображение…');
+  function fmtSize(n) {
+    if (n < 1024) return n + ' Б';
+    if (n < 1048576) return Math.round(n / 1024) + ' КБ';
+    if (n < 1073741824) return (n / 1048576).toFixed(1).replace('.', ',') + ' МБ';
+    return (n / 1073741824).toFixed(2).replace('.', ',') + ' ГБ';
+  }
+
+  function attachStart(t) {
+    showBusy(t || 'Добавляю…');
   }
 
   function attachDone(url) {
     putImage(url);
+  }
+
+  function attachFileDone(url, name, size, mime) {
+    putCard(url, name, size, mime);
   }
 
   function attachFinish() {
@@ -414,7 +430,7 @@
     try { lastAtt = Android.attSize(); } catch (e) {}
   }
 
-  function putImage(url) {
+  function restoreCaret() {
     ed.focus();
     var s = window.getSelection();
     if (savedRange && ed.contains(savedRange.commonAncestorContainer)) {
@@ -427,7 +443,41 @@
       s.removeAllRanges();
       s.addRange(r);
     }
+    return s;
+  }
+
+  function putImage(url) {
+    var s = restoreCaret();
     document.execCommand('insertImage', false, url);
+    if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
+    later();
+  }
+
+  function putCard(url, name, size, mime) {
+    var s = restoreCaret();
+    var box = document.createElement('div');
+    box.className = 'att';
+    box.setAttribute('contenteditable', 'false');
+    var a = document.createElement('a');
+    a.className = 'attc';
+    a.setAttribute('href', url);
+    a.setAttribute('download', name);
+    a.setAttribute('data-mime', mime);
+    var ic = document.createElement('span');
+    ic.textContent = '\uD83D\uDCCE';
+    var nm = document.createElement('span');
+    nm.className = 'attn';
+    nm.textContent = name;
+    var sz = document.createElement('span');
+    sz.className = 'atts';
+    sz.textContent = fmtSize(size);
+    a.appendChild(ic);
+    a.appendChild(nm);
+    a.appendChild(sz);
+    box.appendChild(a);
+    var wrap = document.createElement('div');
+    wrap.appendChild(box);
+    document.execCommand('insertHTML', false, wrap.innerHTML + '<div><br></div>');
     if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
     later();
   }
@@ -828,6 +878,14 @@
   ed.addEventListener('pointerdown', closeMenu);
   ed.addEventListener('input', function () { syncChecks(); later(); });
   ed.addEventListener('click', function (e) {
+    var card = e.target.closest ? e.target.closest('a.attc') : null;
+    if (card) {
+      e.preventDefault();
+      try {
+        Android.openAtt(card.getAttribute('href') || '', card.getAttribute('download') || '', card.getAttribute('data-mime') || '');
+      } catch (er) {}
+      return;
+    }
     if (e.target.type === 'checkbox') {
       var c = e.target;
       if (c.checked) c.setAttribute('checked', ''); else c.removeAttribute('checked');
