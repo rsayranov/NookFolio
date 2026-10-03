@@ -45,6 +45,9 @@
   #recstop { background: #d32f2f; }
   #reccancel { background: #555; }
   .recdot { width: 10px; height: 10px; border-radius: 50%; background: #ff5252; }
+  #spd { display: none; position: fixed; z-index: 40; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); padding: 4px; }
+  #spd button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 9px 22px 9px 16px; font-size: 16px; color: #000; border-radius: 8px; font-family: sans-serif; white-space: nowrap; }
+  #spd button.on { font-weight: bold; background: #e8f0fe; }
 
   .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; display: block; }
   #bar { display: none; position: fixed; right: 8px; top: 48px; box-sizing: border-box; width: 160px; max-height: 400px; overflow-y: auto; background: #fff; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 10; padding: 6px; }
@@ -259,6 +262,7 @@
 <div id="ed" contenteditable="true"></div>
 <div id="busy"></div>
 <div id="rec"><span class="recdot"></span><span id="rect">0:00</span><button id="recstop">Стоп</button><button id="reccancel">Отмена</button></div>
+<div id="spd"></div>
 <script>
   var ed = document.getElementById('ed');
   var bar = document.getElementById('bar');
@@ -268,6 +272,7 @@
   var busyEl = document.getElementById('busy');
   var recEl = document.getElementById('rec');
   var recTime = document.getElementById('rect');
+  var spdEl = document.getElementById('spd');
   var timer = null;
   var hideTimer = null;
   var recTimer = null;
@@ -276,14 +281,36 @@
   var loaded = false;
   var lastAtt = 0;
   var savedRange = null;
+  var spdPick = null;
+  var decoPending = false;
   var current = Android.title();
   title.value = current;
 
   var pages = ['main', 'ins', 'head', 'ol', 'ul', 'emoji', 'fc', 'hc'];
   var keep = { undo: 1, redo: 1, clear: 1, indent: 1, outdent: 1, bold: 1, italic: 1, underline: 1, strike: 1 };
   var BLK = 'div,p,h1,h2,h3,h4,h5,h6,li,blockquote,pre';
+  var RATES = [1, 1.25, 1.5, 1.75, 2];
   var curPage = 'main';
   var curAnchor = null;
+
+  var ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+  var ICON_SHARE = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  var VP_CSS = [
+    ':host { display: block; }',
+    '.p { display: flex; align-items: center; gap: 8px; background: #f0f1f3; border-radius: 28px; padding: 8px 10px; box-sizing: border-box; font-family: sans-serif; user-select: none; -webkit-user-select: none; }',
+    'button { border: none; padding: 0; margin: 0; font-family: inherit; -webkit-tap-highlight-color: transparent; }',
+    '.pl { flex: none; width: 36px; height: 36px; border-radius: 50%; background: #1976d2; color: #fff; display: flex; align-items: center; justify-content: center; }',
+    '.pl svg { width: 20px; height: 20px; fill: currentColor; }',
+    '.mid { flex: 1; min-width: 0; }',
+    '.wv { display: flex; align-items: center; gap: 1.5px; height: 34px; touch-action: pan-y; }',
+    '.b { flex: 1; min-width: 1px; border-radius: 2px; background: #b9bdc4; }',
+    '.b.on { background: #1976d2; }',
+    '.tm { display: flex; justify-content: space-between; font-size: 11px; line-height: 1; color: #6b7280; margin-top: 3px; }',
+    '.sp { flex: none; min-width: 44px; height: 28px; border-radius: 14px; background: #e1e3e8; color: #222; font-size: 12px; font-weight: bold; padding: 0 8px; }',
+    '.sh { flex: none; width: 32px; height: 32px; border-radius: 50%; background: transparent; color: #333; display: flex; align-items: center; justify-content: center; }',
+    '.sh svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }'
+  ].join('\n');
 
   function hideSel() {
     try { Android.hideSelectionToolbar(); } catch (e) {}
@@ -315,6 +342,212 @@
     clearInterval(recTimer);
     recTimer = null;
     recEl.style.display = 'none';
+  }
+
+  function rateLabel(r) {
+    return String(r).replace('.', ',') + 'x';
+  }
+
+  function fmtT(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    s = Math.floor(s);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    var ss = (sec < 10 ? '0' : '') + sec;
+    return h > 0 ? h + ':' + (m < 10 ? '0' : '') + m + ':' + ss : m + ':' + ss;
+  }
+
+  function waveLevels(host) {
+    var raw = host.getAttribute('data-wave') || '';
+    var out = [];
+    if (raw) {
+      var p = raw.split(',');
+      for (var i = 0; i < p.length; i++) {
+        var v = parseInt(p[i], 10);
+        if (!isNaN(v)) out.push(Math.max(8, Math.min(100, v)));
+      }
+    }
+    if (out.length < 8) {
+      out = [];
+      for (var j = 0; j < 40; j++) {
+        out.push(Math.round(34 + 16 * Math.sin(j * 0.8) + 8 * Math.sin(j * 2.1)));
+      }
+    }
+    return out;
+  }
+
+  function closeSpeed() {
+    spdEl.style.display = 'none';
+    spdPick = null;
+  }
+
+  function openSpeed(rect, cur, pick) {
+    spdPick = pick;
+    spdEl.innerHTML = '';
+    for (var i = 0; i < RATES.length; i++) {
+      var b = document.createElement('button');
+      b.textContent = rateLabel(RATES[i]);
+      b.setAttribute('data-r', String(RATES[i]));
+      if (Math.abs(RATES[i] - cur) < 0.001) b.className = 'on';
+      spdEl.appendChild(b);
+    }
+    spdEl.style.display = 'block';
+    var w = spdEl.offsetWidth;
+    var h = spdEl.offsetHeight;
+    var left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.right - w));
+    var top = rect.bottom + 4;
+    if (top + h > window.innerHeight - 8) top = rect.top - h - 4;
+    if (top < 8) top = 8;
+    spdEl.style.left = left + 'px';
+    spdEl.style.top = top + 'px';
+  }
+
+  function decorateAudio(host) {
+    if (host.shadowRoot) return;
+    var audio = host.querySelector(':scope > audio');
+    if (!audio) return;
+    var root = host.attachShadow({ mode: 'open' });
+    var levels = waveLevels(host);
+
+    var st = document.createElement('style');
+    st.textContent = VP_CSS;
+    root.appendChild(st);
+
+    var box = document.createElement('div');
+    box.className = 'p';
+    var pl = document.createElement('button');
+    pl.className = 'pl';
+    pl.setAttribute('aria-label', 'Играть');
+    pl.innerHTML = ICON_PLAY;
+    var mid = document.createElement('div');
+    mid.className = 'mid';
+    var wv = document.createElement('div');
+    wv.className = 'wv';
+    var bars = [];
+    for (var i = 0; i < levels.length; i++) {
+      var bb = document.createElement('span');
+      bb.className = 'b';
+      bb.style.height = Math.max(3, Math.round(levels[i] * 0.3)) + 'px';
+      wv.appendChild(bb);
+      bars.push(bb);
+    }
+    var tm = document.createElement('div');
+    tm.className = 'tm';
+    var t0 = document.createElement('span');
+    t0.textContent = '0:00';
+    var t1 = document.createElement('span');
+    t1.textContent = '0:00';
+    tm.appendChild(t0);
+    tm.appendChild(t1);
+    mid.appendChild(wv);
+    mid.appendChild(tm);
+    var sp = document.createElement('button');
+    sp.className = 'sp';
+    sp.setAttribute('aria-label', 'Скорость');
+    sp.textContent = rateLabel(audio.playbackRate || 1);
+    var sh = document.createElement('button');
+    sh.className = 'sh';
+    sh.setAttribute('aria-label', 'Поделиться');
+    sh.innerHTML = ICON_SHARE;
+    box.appendChild(pl);
+    box.appendChild(mid);
+    box.appendChild(sp);
+    box.appendChild(sh);
+    root.appendChild(box);
+
+    var dragging = false;
+
+    function paint(ratio) {
+      for (var k = 0; k < bars.length; k++) {
+        bars[k].classList.toggle('on', (k + 0.5) / bars.length <= ratio);
+      }
+    }
+
+    function upd() {
+      var d = audio.duration;
+      var c = audio.currentTime;
+      var fin = isFinite(d) && d > 0;
+      t0.textContent = fmtT(c);
+      t1.textContent = fin ? fmtT(d) : '0:00';
+      if (!dragging) paint(fin ? c / d : 0);
+      pl.innerHTML = audio.paused ? ICON_PLAY : ICON_PAUSE;
+      pl.setAttribute('aria-label', audio.paused ? 'Играть' : 'Пауза');
+    }
+
+    function seekTo(e) {
+      var rect = wv.getBoundingClientRect();
+      var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      var d = audio.duration;
+      if (isFinite(d) && d > 0) {
+        audio.currentTime = ratio * d;
+        t0.textContent = fmtT(ratio * d);
+      }
+      paint(ratio);
+    }
+
+    ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause'].forEach(function (ev) {
+      audio.addEventListener(ev, upd);
+    });
+    audio.addEventListener('ended', function () {
+      audio.currentTime = 0;
+      upd();
+    });
+
+    pl.addEventListener('click', function () {
+      if (audio.paused) {
+        var pr = audio.play();
+        if (pr && pr.catch) pr.catch(function () {});
+      } else {
+        audio.pause();
+      }
+    });
+
+    wv.addEventListener('pointerdown', function (e) {
+      dragging = true;
+      try { wv.setPointerCapture(e.pointerId); } catch (x) {}
+      seekTo(e);
+    });
+    wv.addEventListener('pointermove', function (e) {
+      if (dragging) seekTo(e);
+    });
+    var endDrag = function () {
+      dragging = false;
+      upd();
+    };
+    wv.addEventListener('pointerup', endDrag);
+    wv.addEventListener('pointercancel', endDrag);
+
+    sp.addEventListener('click', function () {
+      openSpeed(sp.getBoundingClientRect(), audio.playbackRate || 1, function (r) {
+        audio.playbackRate = r;
+        sp.textContent = rateLabel(r);
+      });
+    });
+
+    sh.addEventListener('click', function () {
+      try {
+        Android.shareAtt(audio.getAttribute('src') || '', 'Голосовая заметка.m4a', 'audio/mp4');
+      } catch (e) {}
+    });
+
+    root.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+    if (audio.readyState >= 1) upd();
+  }
+
+  function decorateAll() {
+    var list = ed.querySelectorAll('.att > audio');
+    for (var i = 0; i < list.length; i++) decorateAudio(list[i].parentElement);
+  }
+
+  function scheduleDecorate() {
+    if (decoPending) return;
+    decoPending = true;
+    requestAnimationFrame(function () {
+      decoPending = false;
+      decorateAll();
+    });
   }
 
   function loadDoc() {
@@ -455,8 +688,8 @@
     putCard(url, name, size, mime);
   }
 
-  function attachAudioDone(url, size) {
-    putAudio(url);
+  function attachAudioDone(url, size, wave) {
+    putAudio(url, wave);
   }
 
   function attachFinish() {
@@ -487,11 +720,12 @@
     later();
   }
 
-  function putAudio(url) {
+  function putAudio(url, wave) {
     var s = restoreCaret();
     var box = document.createElement('div');
     box.className = 'att';
     box.setAttribute('contenteditable', 'false');
+    if (wave) box.setAttribute('data-wave', wave);
     var au = document.createElement('audio');
     au.setAttribute('controls', '');
     au.setAttribute('preload', 'metadata');
@@ -501,6 +735,7 @@
     wrap.appendChild(box);
     document.execCommand('insertHTML', false, wrap.innerHTML + '<div><br></div>');
     if (s.rangeCount) savedRange = s.getRangeAt(0).cloneRange();
+    scheduleDecorate();
     later();
   }
 
@@ -669,6 +904,27 @@
       var c = done[j].querySelector('input[type=checkbox]');
       if (!c || !isChecked(c)) done[j].classList.remove('done');
     }
+  }
+
+  function checkLineEmpty(b) {
+    return b.textContent.replace(/[\u00a0\s]/g, '') === '' && !b.querySelector('img,audio');
+  }
+
+  function continueCheck() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) return;
+    var cur = blockOf(sel.anchorNode);
+    if (!cur || hasCheck(cur)) return;
+    var L = leafBlocks();
+    var i = L.indexOf(cur);
+    if (i <= 0) return;
+    if (!hasCheck(L[i - 1])) return;
+    var r = document.createRange();
+    r.setStart(cur, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    document.execCommand('insertHTML', false, '<input type="checkbox">&nbsp;');
   }
 
   function unitOf(a, n) {
@@ -901,6 +1157,8 @@
     showBusy('Не удалось открыть заметку. Данные не изменены.');
   }
   syncChecks();
+  decorateAll();
+  new MutationObserver(scheduleDecorate).observe(ed, { childList: true, subtree: true });
 
   refit();
   window.addEventListener('resize', refit);
@@ -913,11 +1171,33 @@
   });
   ed.addEventListener('scroll', function () {
     stickBottom = (ed.scrollHeight - ed.scrollTop - ed.clientHeight) < 40;
+    closeSpeed();
   });
   ed.addEventListener('focus', function () { setTimeout(fit, 400); });
 
   document.addEventListener('selectionchange', function () {
     if (bar.classList.contains('open')) hideSel();
+  });
+
+  document.addEventListener('play', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'AUDIO') return;
+    var all = ed.querySelectorAll('audio');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] !== t && !all[i].paused) all[i].pause();
+    }
+  }, true);
+
+  document.addEventListener('pointerdown', function (e) {
+    if (spdEl.style.display === 'block' && !spdEl.contains(e.target)) closeSpeed();
+  }, true);
+  spdEl.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  spdEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || !spdPick) return;
+    var r = parseFloat(b.getAttribute('data-r'));
+    if (isFinite(r)) spdPick(r);
+    closeSpeed();
   });
 
   document.getElementById('recstop').addEventListener('click', function () {
@@ -936,7 +1216,24 @@
   });
 
   ed.addEventListener('pointerdown', closeMenu);
-  ed.addEventListener('input', function () { syncChecks(); later(); });
+  ed.addEventListener('beforeinput', function (e) {
+    if (e.inputType !== 'insertParagraph') return;
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) return;
+    var b = blockOf(sel.anchorNode);
+    if (!b || !hasCheck(b)) return;
+    if (checkLineEmpty(b)) {
+      e.preventDefault();
+      removeCheck(b);
+      syncChecks();
+      later();
+    }
+  });
+  ed.addEventListener('input', function (e) {
+    if (e.inputType === 'insertParagraph') continueCheck();
+    syncChecks();
+    later();
+  });
   ed.addEventListener('click', function (e) {
     var card = e.target.closest ? e.target.closest('a.attc') : null;
     if (card) {
