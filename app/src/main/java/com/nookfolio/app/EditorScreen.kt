@@ -3,6 +3,7 @@ package com.nookfolio.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -383,6 +384,32 @@ private fun newRecorder(context: Context): MediaRecorder {
     return if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
 }
 
+/** Превращает замеры громкости записи в 40 уровней (8..100) для волны. */
+private fun buildWave(list: List<Int>): String {
+    val n = list.size
+    if (n == 0) return ""
+    val bars = 40
+    val vals = IntArray(bars)
+    var maxV = 1
+    for (i in 0 until bars) {
+        val from = i * n / bars
+        val to = maxOf(from + 1, (i + 1) * n / bars).coerceAtMost(n)
+        var m = 0
+        for (k in from until to) {
+            if (list[k] > m) m = list[k]
+        }
+        vals[i] = m
+        if (m > maxV) maxV = m
+    }
+    val sb = StringBuilder()
+    for (i in 0 until bars) {
+        val lv = (Math.pow(vals[i].toDouble() / maxV, 0.6) * 100.0).toInt().coerceIn(8, 100)
+        if (i > 0) sb.append(',')
+        sb.append(lv)
+    }
+    return sb.toString()
+}
+
 class LimitedInputStream(private val src: InputStream, private var left: Long) : InputStream() {
     override fun read(): Int {
         if (left <= 0) return -1
@@ -494,6 +521,19 @@ class EditorBridge(
     private var backedUp = false
     private var recorder: MediaRecorder? = null
     private var recFile: File? = null
+    private val amps = ArrayList<Int>()
+    private val sampler = object : Runnable {
+        override fun run() {
+            synchronized(this@EditorBridge) {
+                val r = recorder ?: return
+                try {
+                    amps.add(r.maxAmplitude)
+                } catch (e: Throwable) {
+                }
+                main.postDelayed(this, 80L)
+            }
+        }
+    }
 
     var web: WebView? = null
 
@@ -605,376 +645,11 @@ class EditorBridge(
         io.execute { finishRecording(false, false) }
     }
 
-    @JavascriptInterface
-    fun openAtt(url: String, name: String, mime: String) {
+    private fun exportCopy(url: String, name: String): Pair<Uri, String>? {
         val fileName = url.removePrefix(ATT_HOST).substringBefore('?')
-        if (fileName.isEmpty() || fileName.contains('/') || fileName.contains("..")) return
+        if (fileName.isEmpty() || fileName.contains('/') || fileName.contains("..")) return null
         val src = File(attDir, fileName)
-        if (!src.exists()) return
-        io.execute {
-            try {
-                val dir = File(context.cacheDir, "open")
-                dir.deleteRecursively()
-                dir.mkdirs()
-                val shown = (if (name.isBlank()) fileName else name).replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                val copy = File(dir, shown)
-                src.copyTo(copy, overwrite = true)
-                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", copy)
-                val type = if (mime.isNotBlank()) mime else mimeFor(shown)
-                val intent = Intent(Intent.ACTION_VIEW)
-                intent.setDataAndType(uri, type)
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                main.post {
-                    try {
-                        context.startActivity(intent)
-                    } catch (e: ActivityNotFoundException) {
-                        Toast.makeText(context, "Нет приложения для открытия этого файла", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Throwable) {
-                main.post { Toast.makeText(context, "Не удалось открыть файл", Toast.LENGTH_LONG).show() }
-            }
-        }
-    }
-
-    fun isRecording(): Boolean = recorder != null
-
-    @Synchronized
-    fun startRecording(): Boolean {
-        if (recorder != null) return true
-        var r: MediaRecorder? = null
-        var f: File? = null
-        return try {
-            attDir.mkdirs()
-            f = File(attDir, "v" + counter.incrementAndGet() + ".m4a")
-            r = newRecorder(context)
-            r.setAudioSource(MediaRecorder.AudioSource.MIC)
-            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            r.setAudioEncodingBitRate(64000)
-            r.setAudioSamplingRate(44100)
-            r.setAudioChannels(1)
-            r.setOutputFile(f.absolutePath)
-            r.prepare()
-            r.start()
-            recorder = r
-            recFile = f
-            true
-        } catch (e: Throwable) {
-            try {
-                r?.release()
-            } catch (e2: Throwable) {
-            }
-            f?.delete()
-            false
-        }
-    }
-
-    fun stopForPause() {
-        finishRecording(true, true)
-    }
-
-    fun cancelRecording() {
-        finishRecording(false, false)
-    }
-
-    @Synchronized
-    private fun finishRecording(save: Boolean, flushAfter: Boolean) {
-        val r = recorder ?: return
-        recorder = null
-        val f = recFile
-        recFile = null
-        var ok = true
-        try {
-            r.stop()
-        } catch (e: Throwable) {
-            ok = false
-        }
-        try {
-            r.release()
-        } catch (e: Throwable) {
-        }
-        if (f == null) return
-        val view = web
-        if (!save || !ok || f.length() < 1000) {
-            f.delete()
-            if (save) {
-                main.post { Toast.makeText(context, "Запись слишком короткая", Toast.LENGTH_SHORT).show() }
-            }
-            view?.post { view.evaluateJavascript("voiceEnded()", null) }
-            return
-        }
-        val url = ATT_HOST + f.name
-        val size = f.length()
-        view?.post {
-            view.evaluateJavascript("voiceEnded()", null)
-            view.evaluateJavascript("attachAudioDone(" + JSONObject.quote(url) + "," + size + ")", null)
-            if (flushAfter) view.evaluateJavascript("flush()", null)
-        }
-    }
-
-    fun attachImages(uris: List<Uri>, view: WebView, cleanup: File? = null) {
-        if (uris.isEmpty()) return
-        view.evaluateJavascript("attachStart('Добавляю изображение…')", null)
-        io.execute {
-            attDir.mkdirs()
-            for (uri in uris) {
-                try {
-                    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-                    val n = counter.incrementAndGet()
-                    var name = "u" + n + ".jpg"
-                    var dst = File(attDir, name)
-                    var ok = false
-                    if (mime != "image/gif") {
-                        ok = compressImage(context, uri, dst)
-                    }
-                    if (!ok) {
-                        dst.delete()
-                        name = "u" + n + "." + extFor(mime)
-                        dst = File(attDir, name)
-                        context.contentResolver.openInputStream(uri)?.use { ins ->
-                            FileOutputStream(dst).use { o -> ins.copyTo(o, 1 shl 16) }
-                        }
-                        ok = dst.exists() && dst.length() > 0
-                    }
-                    if (ok) {
-                        val url = ATT_HOST + name
-                        view.post { view.evaluateJavascript("attachDone(" + JSONObject.quote(url) + ")", null) }
-                    }
-                } catch (e: Throwable) {
-                    main.post { Toast.makeText(context, "Не удалось добавить изображение", Toast.LENGTH_LONG).show() }
-                }
-            }
-            cleanup?.delete()
-            view.post { view.evaluateJavascript("attachFinish()", null) }
-        }
-    }
-
-    fun attachFiles(uris: List<Uri>, view: WebView) {
-        if (uris.isEmpty()) return
-        view.evaluateJavascript("attachStart('Добавляю файл…')", null)
-        io.execute {
-            attDir.mkdirs()
-            for (uri in uris) {
-                try {
-                    val shown = queryName(context, uri).ifEmpty { "file" }
-                    var mime = context.contentResolver.getType(uri) ?: ""
-                    if (mime.isBlank() || mime == "application/octet-stream") {
-                        mime = mimeFor(shown)
-                    }
-                    val n = counter.incrementAndGet()
-                    val name = "f" + n + "." + safeExt(shown, mime)
-                    val dst = File(attDir, name)
-                    context.contentResolver.openInputStream(uri)?.use { ins ->
-                        FileOutputStream(dst).use { o -> ins.copyTo(o, 1 shl 16) }
-                    }
-                    if (dst.exists() && dst.length() > 0) {
-                        val url = ATT_HOST + name
-                        val js = "attachFileDone(" + JSONObject.quote(url) + "," + JSONObject.quote(shown) + "," +
-                            dst.length() + "," + JSONObject.quote(mime) + ")"
-                        view.post { view.evaluateJavascript(js, null) }
-                    } else {
-                        dst.delete()
-                    }
-                } catch (e: Throwable) {
-                    main.post { Toast.makeText(context, "Не удалось добавить файл", Toast.LENGTH_LONG).show() }
-                }
-            }
-            view.post { view.evaluateJavascript("attachFinish()", null) }
-        }
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-fun EditorScreen(
-    file: File,
-    onMenu: () -> Unit,
-    onRenamed: (File) -> Unit,
-    onWeb: (WebView) -> Unit
-) {
-    val owner = LocalLifecycleOwner.current
-    val context = LocalContext.current
-    var webRef: WebView? by remember { mutableStateOf(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    var pending by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var pendingMb by remember { mutableIntStateOf(0) }
-    var camPath by rememberSaveable { mutableStateOf("") }
-    val holder = remember { arrayOfNulls<EditorBridge>(1) }
-    val attDir = remember { File(context.filesDir, "att_work") }
-
-    fun startVoice() {
-        val br = holder[0]
-        val w = webRef
-        if (br == null || w == null) return
-        if (br.isRecording()) return
-        if (br.startRecording()) {
-            w.evaluateJavascript("voiceStarted()", null)
-        } else {
-            Toast.makeText(context, "Не удалось начать запись", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    val pickImages = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { picked ->
-        val br = holder[0]
-        val w = webRef
-        if (br != null && w != null && picked.isNotEmpty()) {
-            br.attachImages(picked, w)
-        }
-    }
-
-    val takePhoto = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { done ->
-        if (camPath.isNotEmpty()) {
-            val f = File(camPath)
-            val br = holder[0]
-            val w = webRef
-            if (done && br != null && w != null && f.exists() && f.length() > 0) {
-                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", f)
-                br.attachImages(listOf(uri), w, f)
-            } else {
-                f.delete()
-            }
-        }
-    }
-
-    val pickFiles = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { picked ->
-        val br = holder[0]
-        val w = webRef
-        if (br != null && w != null && picked.isNotEmpty()) {
-            var biggest = 0L
-            for (u in picked) {
-                val s = querySize(context, u)
-                if (s > biggest) biggest = s
-            }
-            if (biggest >= LARGE_BYTES) {
-                pendingMb = (biggest / (1024L * 1024L)).toInt()
-                pending = picked
-            } else {
-                br.attachFiles(picked, w)
-            }
-        }
-    }
-
-    val micPerm = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            startVoice()
-        } else {
-            Toast.makeText(context, "Для записи нужен доступ к микрофону", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    DisposableEffect(owner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                webRef?.evaluateJavascript("refit()", null)
-            }
-            if (event == Lifecycle.Event.ON_PAUSE) {
-                holder[0]?.stopForPause()
-            }
-        }
-        owner.lifecycle.addObserver(observer)
-        onDispose {
-            owner.lifecycle.removeObserver(observer)
-            holder[0]?.cancelRecording()
-        }
-    }
-
-    key(reload) {
-        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    val view = EditorWebView(ctx)
-                    view.settings.javaScriptEnabled = true
-                    view.webViewClient = AttClient(attDir) {
-                        Handler(Looper.getMainLooper()).post {
-                            holder[0]?.cancelRecording()
-                            Toast.makeText(ctx, "Редактор перезапущен", Toast.LENGTH_LONG).show()
-                            reload++
-                        }
-                    }
-                    val bridge = EditorBridge(
-                        ctx,
-                        file,
-                        attDir,
-                        onMenu,
-                        onRenamed,
-                        { view.hideSelectionToolbar() },
-                        { kind ->
-                            if (kind == "image") {
-                                pickImages.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            } else if (kind == "file") {
-                                pickFiles.launch(arrayOf("*/*"))
-                            } else if (kind == "camera") {
-                                try {
-                                    val dir = File(ctx.cacheDir, "camera")
-                                    dir.mkdirs()
-                                    val f = File(dir, "cam_" + System.currentTimeMillis() + ".jpg")
-                                    camPath = f.path
-                                    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
-                                    takePhoto.launch(uri)
-                                } catch (e: Throwable) {
-                                    Toast.makeText(ctx, "Не удалось открыть камеру", Toast.LENGTH_LONG).show()
-                                }
-                            } else if (kind == "voice") {
-                                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
-                                    PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    startVoice()
-                                } else {
-                                    micPerm.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            } else {
-                                Toast.makeText(
-                                    ctx,
-                                    "Эта вставка появится в следующем обновлении",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    )
-                    bridge.web = view
-                    holder[0] = bridge
-                    view.addJavascriptInterface(bridge, "Android")
-                    view.loadUrl("file:///android_asset/editor.html")
-                    webRef = view
-                    onWeb(view)
-                    view
-                }
-            )
-        }
-    }
-
-    if (pending.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { pending = emptyList() },
-            title = { Text("Большой файл") },
-            text = {
-                Text(
-                    "Размер файла около " + pendingMb +
-                        " МБ. Заметка станет очень тяжёлой и будет медленно открываться и сохраняться. Добавить?"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val list = pending
-                    pending = emptyList()
-                    val br = holder[0]
-                    val w = webRef
-                    if (br != null && w != null) br.attachFiles(list, w)
-                }) { Text("Добавить") }
-            },
-            dismissButton = { TextButton(onClick = { pending = emptyList() }) { Text("Отмена") } }
-        )
-    }
-}
+        if (!src.exists()) return null
+        val dir = File(context.cacheDir, "open")
+        dir.deleteRecursively()
+        dir.mkdirs()
